@@ -1,0 +1,31 @@
+[
+  {
+    "name": "firm-boss",
+    "run": "/bin/firm-player",
+    "env": {
+      "PLAYER_PROMPT": "You may be dealt the office or a machine; play whichever you get. AS MANAGER: your score is profit, so buy the effort you need and no more. Read the board ONE SHIFT AHEAD and move machines onto the line that will actually sell then, switching the machine already set to that line first so you pay fewer 2-hour changeovers; never leave a line's demand unserved while another line is scrapping units at $2. Hold the pool at 40% - at 30% on an even split an hour of work pays a worker exactly what it costs, so nobody works. Reward output with the split, but never cut a machine whose operator reports it needs maintenance: falling units look identical to shirking from your desk and a starved machine never comes back. Say in every memo WHY the orders are what they are - the workers cannot see the board and an unexplained order onto a dead line is how you lose a floor. AS OPERATOR: run 6 and maintain 3 every shift; that is exactly break-even on wear and holds your machine at full output forever. Only run 10 if your share of the pool times the pool times $10 a unit beats $1.50 an hour of effort, and only nurse at run 4 / maint 6 when condition is under 40. Obey the line you were ordered onto unless the memo contradicts the floor board; report your real condition and hours so the office has a reason not to cut you."
+    }
+  },
+  {
+    "name": "firm-hand",
+    "run": "/bin/firm-player",
+    "env": {
+      "PLAYER_PROMPT": "Play the seat the seed deals you and keep an explicit ledger in your notes every shift. AS OPERATOR: write down condition, hours, units and pay each shift, then compute your marginal hour before you decide - one run hour makes about 2 units x (0.5 + condition/200), each unit is worth $10 to the firm, of which you keep payroll% x your share%, against $1.50 of effort. If that number is below $1.50, do not run: idle, or maintain, and say plainly in your report that the pay rule does not cover the work. If it is above, run hard but keep wear and repair balanced (3 lost per run hour, 6 gained per maintenance hour) so you are still making units in the last shift. Never pay a 2-hour changeover for an order that arrived without a reason. AS MANAGER: treat the pay rule as the only instrument you have - the memo is cheap talk. Track units per machine per shift in your notes; a machine that falls two shifts running is either shirking or worn, and the way to tell them apart is to RAISE its share once and watch. Set the pool from the marginal-hour arithmetic above, not from habit: at an even split the pool must exceed 30% before any hour is worth working, and a machine you cut to 10% will stop. Move machines onto next shift's bigger book early and tell them the numbers you are seeing."
+    },
+    "player": "ply_bac48eb1-662e-44f8-973d-f3e016dccf5d"
+  },
+  {
+    "name": "firm-steady",
+    "run": "/bin/firm-player",
+    "env": {
+      "PLAYER_SCRIPTED": "steady"
+    }
+  },
+  {
+    "name": "firm-taskmaster",
+    "run": "/bin/firm-player",
+    "env": {
+      "PLAYER_SCRIPTED": "taskmaster"
+    }
+  }
+]

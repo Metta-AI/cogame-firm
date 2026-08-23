@@ -1,0 +1,429 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Metta-AI/coworld/main/src/coworld/coworld_manifest_schema.json",
+  "episode_timeout_minutes": 20,
+  "tags": [
+    "principal-agent",
+    "hierarchy",
+    "incentive-design",
+    "mixed-motive",
+    "llm-driven",
+    "turn-based",
+    "five-player",
+    "economics"
+  ],
+  "game": {
+    "name": "firm",
+    "replay_viewer": {
+      "bundle": "static-replay-viewer"
+    },
+    "description": "Firm: one manager who sees the market, four workers who see the machines. Five LLM-piloted cogs run a small factory for eight shifts. The seat-to-role assignment is a seeded permutation, so no policy can choose the office. The MANAGER is the only seat that sees the order board - how many units of product line A and line B the firm can actually sell this shift and next - and can do exactly three things a shift: order each machine onto line A or B, set the PAY RULE (what percentage of revenue, 0 to 60, goes into the worker pool and how that pool is split four ways), and write one memo of at most 240 characters. Everything the manager decides takes effect NEXT shift: it directs blind and one shift late. Each WORKER owns one machine, is the only seat that can see its condition (0 to 100), and spends a ten-hour shift running a line, maintaining the machine, or doing nothing. Running makes about 2 units an hour on a healthy machine and costs it 3 condition an hour; maintenance restores 6; switching lines costs 2 hours. A unit sold against demand is worth $10, a unit beyond demand is scrap at $2. Workers are paid out of the pool and score their pay minus $1.50 an hour of effort; the manager scores the firm's profit. At payroll 30% on an equal split a worker is exactly indifferent between working and shirking - the manager has to buy effort, and a worker cut to a small share rationally goes idle. The manager sees falling units and cannot tell a worn machine from a shirking one, because hours and condition are invisible from the office. That confusion is the benchmark. The game is LLM-driven: every shift the server sends each seat's policy prompt plus its role-specific view to Claude as ONE parallel batch of five, so A POLICY IS JUST A PROMPT - build one by reusing the published player runnable and setting the PLAYER_PROMPT environment variable to your strategy. Two scripted baselines (steady and taskmaster) play any seat that registers as scripted - and every seat when no LLM credentials are available, so episodes always complete.",
+    "owner": "daveey@gmail.com",
+    "runnable": {
+      "type": "game",
+      "image": "{{FIRM_IMAGE}}",
+      "run": [
+        "/bin/firm"
+      ],
+      "env": {
+        "ANTHROPIC_API_KEY_URI": "secret://coworld/firm/anthropic_api_key"
+      },
+      "source_url": "https://github.com/Metta-AI/cogame-firm/tree/main"
+    },
+    "config_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tokens",
+        "players"
+      ],
+      "properties": {
+        "tokens": {
+          "description": "One connection token per player slot, indexed by slot.",
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "players": {
+          "description": "One player display-name object per seat, indexed by slot.",
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "num_agents": {
+          "description": "Seat count; injected by the commissioner. Firm is a five-player game: one manager and four workers.",
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 5
+        },
+        "seed": {
+          "description": "Pins the seat-to-role permutation, the order board's two demand levels, the shift the board switches on, and the seat aliases. Omit for a fresh random seed per episode.",
+          "type": "integer"
+        },
+        "shifts": {
+          "description": "Shifts in the episode. Every seat decides every shift, simultaneously; the shift resolves when all five decisions are in.",
+          "type": "integer",
+          "minimum": 4,
+          "maximum": 24,
+          "default": 8
+        },
+        "reports": {
+          "description": "Whether workers may send the manager one short, non-binding report each shift (free text, max 120 characters, and not checked against the truth).",
+          "type": "boolean",
+          "default": true
+        },
+        "episodeTimeoutSeconds": {
+          "description": "Wall-clock the game assumes the platform allows an episode when COWORLD_TIMEOUT_SECONDS is not in its environment; play stops between shifts at 60% of it so results and the replay always land.",
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 6000,
+          "default": 1200
+        },
+        "turnDelayMs": {
+          "description": "Spectator pacing delay between shifts.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000,
+          "default": 400
+        },
+        "model": {
+          "description": "Claude model that drives every seat.",
+          "type": "string",
+          "default": "claude-sonnet-5"
+        },
+        "maxOutputTokens": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 2000,
+          "default": 800
+        },
+        "llmTimeoutSeconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 300,
+          "default": 30
+        },
+        "player_connect_timeout_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "default": 180
+        }
+      }
+    },
+    "results_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "names",
+        "scores",
+        "roles",
+        "pay",
+        "units",
+        "revenue",
+        "wages",
+        "profit",
+        "shifts",
+        "maxShifts",
+        "reason"
+      ],
+      "properties": {
+        "names": {
+          "description": "Policy display names, indexed by slot. Seats play under anonymous cog aliases in-game; results attribute by policy name.",
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "string"
+          }
+        },
+        "scores": {
+          "description": "The single ladder statistic: a worker's take-home pay net of effort divided by (shifts x 30), a manager's firm profit divided by (shifts x 300). Higher is better; both roles are on one scale.",
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "number"
+          }
+        },
+        "roles": {
+          "description": "The role each seat drew: Manager or Worker.",
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "string"
+          }
+        },
+        "pay": {
+          "description": "Each worker's take-home pay NET of effort, in dollars; 0.0 on the manager seat.",
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "number"
+          }
+        },
+        "units": {
+          "description": "Units the seat's machine delivered over the episode; 0 on the manager seat.",
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "revenue": {
+          "description": "The firm's total revenue over the shifts played.",
+          "type": "number",
+          "minimum": 0
+        },
+        "wages": {
+          "description": "Total paid into the worker pool.",
+          "type": "number",
+          "minimum": 0
+        },
+        "profit": {
+          "description": "revenue - wages: the manager's raw score before normalization.",
+          "type": "number"
+        },
+        "shifts": {
+          "description": "Shifts actually played (settlements resolved).",
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxShifts": {
+          "description": "The episode's shift count after budget fitting.",
+          "type": "integer",
+          "minimum": 4
+        },
+        "reason": {
+          "description": "How the episode ended: complete (all shifts played) or deadline (episode clock; scores use the shifts played).",
+          "type": "string"
+        }
+      }
+    },
+    "protocols": {
+      "player": {
+        "type": "text",
+        "value": "firm.player.v1 - JSON text frames over the websocket named by COWORLD_PLAYER_WS_URL (already carrying ?slot=N&token=T). A Firm policy is a prompt: the player container's only job is to deliver it; the game server makes every decision by sending that prompt plus the seat's role-specific view to Claude once a shift, all five seats in one parallel batch because the shift is simultaneous. game->player frames: {\"type\":\"welcome\",\"protocol\":\"firm.player.v1\",\"slot\":N,\"name\":str,\"role\":\"Manager\"|\"Worker\",\"machine\":int (0 for the manager, 1..4 for a worker),\"shifts\":int} on connect. {\"type\":\"state\",...} after every event, REDACTED to the seat's own view. Manager: {\"type\":\"state\",\"slot\":N,\"name\":str,\"role\":\"Manager\",\"board\":{\"demandA\":int,\"demandB\":int,\"nextA\":int,\"nextB\":int,\"price\":10.0,\"salvage\":2.0},\"floor\":[{\"machine\":1..4,\"name\":str,\"setup\":\"A\"|\"B\",\"order\":\"A\"|\"B\",\"units\":int,\"pay\":float,\"share\":int} x4],\"ledger\":{\"revenue\",\"pool\",\"profit\",\"revenueTotal\",\"wagesTotal\",\"profitTotal\"},\"payroll\":int,\"split\":[4 ints],\"reports\":[{\"machine\",\"name\",\"say\"}],\"directive\":str,\"notes\":str,\"shift\":int,\"shifts\":int,\"shiftsPlayed\":int,\"started\":bool,\"done\":bool,\"reason\":str} - no machine condition, no hours, no toil. Worker: {\"type\":\"state\",\"slot\":N,\"name\":str,\"role\":\"Worker\",\"machine\":1..4,\"own\":{\"setup\",\"order\",\"condition\",\"run\",\"maint\",\"units\",\"pay\",\"toil\",\"net\"},\"directive\":str,\"payroll\":int,\"split\":[4 ints],\"floor\":[{\"machine\",\"name\",\"setup\",\"order\",\"units\"} x4],\"notes\":str,\"shift\",\"shifts\",\"shiftsPlayed\",\"started\",\"done\",\"reason\"} - no demand, no prices, no firm ledger, no other machine's condition. {\"type\":\"final\",\"done\":true,\"slot\":N,\"scores\":[5],\"roles\":[5],\"names\":[5 aliases],\"pay\":[5],\"profit\":float,\"shifts\":int,\"reason\":str} at episode end, after which the player should exit. player->game frames: {\"type\":\"prompt\",\"prompt\":str,\"scripted\":str} - the prompt (max 4000 characters, cut on rune boundaries) IS the policy, sent right after connecting and again after welcome; scripted \"steady\" (or \"1\"/\"true\"/\"yes\") plays the built-in competent baseline for that seat, \"taskmaster\" the drive-it-into-the-ground baseline, \"\" means LLM-driven. The seat's own replies to the model are, for the manager, {\"orders\":[\"A\",\"B\",\"A\",\"B\"],\"payroll\":0..60,\"split\":[4 non-negative numbers renormalized to sum to 100],\"directive\":\"<=240 runes\",\"notes\":\"<=600 runes\"} and, for a worker, {\"line\":\"A\"|\"B\",\"run\":0..10,\"maint\":0..10 with run+maint<=10,\"report\":\"<=120 runes\",\"notes\":\"<=600 runes\"}. A policy is just a prompt: field one by reusing the published firm-player runnable with PLAYER_PROMPT set to your strategy. The role is dealt by the seed after seating, so a prompt must cover both roles."
+      },
+      "global": {
+        "type": "text",
+        "value": "Global spectators connect a websocket to /global and receive the full snapshot as JSON after every event: {\"type\":\"state\",\"game\":\"firm\",\"seats\":[{name,role,roleId,worker,score,share,pay,units,line,order,condition,run,maint,toil,say,notes,pending,scripted,obeyed,idle} x5 by SEAT],\"managerSeat\":int,\"workerSeat\":[4 seat indexes by machine],\"machines\":[{machine:1..4,seat,name,setup,order,condition,run,maint,units,pay,toil,share,obeyed,idle} x4],\"board\":{shift,demandA,demandB,nextA,nextB,price,salvage,switched},\"directive\":str,\"payroll\":int,\"split\":[4 ints],\"ledger\":{revenue,pool,profit,revenueTotal,wagesTotal,profitTotal},\"series\":{demandA[],demandB[],madeA[],madeB[],profit[],pay[4][],condition[4][]},\"switchShift\":int,\"shift\":int,\"shifts\":int,\"shiftsPlayed\":int,\"phase\":\"shift\"|\"done\",\"gameDone\":bool,\"reason\":str,\"policyNames\":[5],\"events\":[...],\"started\":bool,\"done\":bool,\"connected\":[bool]}. The snapshot is the SPECTATOR projection: it carries the order board AND every machine's condition, because the replay is where the audience sees both halves of the asymmetry at once; the players' frames are the separate redacted per-seat views. The events array is append-only and is the complete transcript. Event vocabulary: start (no fields); shift {shift,demandA,demandB,machines[4],payroll,split[4],text=the standing directive in force}; memo {shift,seat,orders[4],payroll,split[4],say=the directive,text=the manager's notes,scripted}; work {shift,seat,worker:0..3,line,run,maint,say=the report,text=the seat's notes,scripted}; settle {shift,units[4],condition[4],soldA,soldB,surplusA,surplusB,revenue,pool,profit,pay[4],toil[4],obeyed[4],idle[4]}; end {shift=shifts played,text=reason}. shift and settle are DERIVED events: the viewer re-derives them from the seed plus the memo and work events and rejects a recording that disagrees. The browser page at /client/global renders the factory floor live; /client/replay plays a recorded episode; the static replay viewer bundle renders replays hosted by the platform (index.html?replay=<url>)."
+      }
+    },
+    "docs": {
+      "readme": {
+        "type": "text",
+        "value": "Five cogs run a small factory for eight shifts. One MANAGER sees the order board - how many units of line A and line B the firm can sell this shift and next - and can do exactly two things: write a memo and set the pay rule (what share of revenue goes into the worker pool and how it splits four ways). Four WORKERS each own one machine, are the only seats that can see its condition, and choose how to spend a ten-hour shift: running the line they were told to run, running a different one, maintaining the machine, or doing nothing. Everything the manager decides takes effect one shift late, so it directs blind. Revenue splits per the manager's rule: a unit sold against demand is $10, a unit beyond demand is scrap at $2. Workers score their take-home pay minus $1.50 an hour of effort; the manager scores the firm's profit. At payroll 30% on an equal split a worker is exactly indifferent between working and shirking, so the manager has to buy effort - and a worker cut to a small share rationally goes idle. Machines wear 3 condition per running hour and recover 6 per maintenance hour, and a worn machine makes fewer units for the same hours, which from the office looks exactly like shirking. A policy is just a prompt: field one by reusing the published firm-player runnable with the PLAYER_PROMPT environment variable set to your strategy, and write it to cover both roles - the seed deals the office. Two scripted baselines, steady (run 6 / maintain 3, obey orders, report honestly, pay 40%) and taskmaster (run 10 / maintain 0, everything onto one line, pay 20%), play any seat that registers as scripted and every seat when no LLM credentials are available, so episodes always complete."
+      },
+      "pages": [
+        {
+          "id": "rules.md",
+          "title": "rules.md",
+          "content": {
+            "type": "text",
+            "value": "# Firm rules\n\n## Seats and roles\n\n- Exactly five seats. `RoleNames = [\"Manager\", \"Worker\"]`: one Manager and four\n  Workers, dealt by a **seeded permutation** of `[0, 1, 1, 1, 1]`. A policy\n  cannot choose to be the manager, and no slot is structurally stuck on the\n  floor.\n- Machines are numbered **1 to 4** for humans and belong to the four worker\n  seats in ascending seat order.\n- Every seat plays under an anonymous cog alias drawn from the seed. Policy\n  names are spectator-side only.\n\n## The floor\n\nTwo product lines, A and B. Each machine is *set to* one line at a time and\nstarts at `condition 100`, with machines 1-3 set to A and machine 4 to B.\n\n| field | who sees it |\n|---|---|\n| `setup` (the line the machine is on) | everyone |\n| `order` (the line the manager ordered) | everyone |\n| `units` delivered last shift | everyone |\n| `pay` last shift | everyone |\n| `condition` 0..100 | its worker only |\n| `run` / `maint` hours | its worker only |\n| `toil` (the worker's effort cost) | its worker only |\n\nThe **order board** is the manager's private information: `demandA` and\n`demandB` per shift. One level is high (30..36), the other low (12..18), and\nthey swap once at a seeded `switchShift` in 3..5. The manager sees this shift's\nand next shift's numbers, and the whole realized history - never further ahead.\nA unit sold against demand pays `Price = $10`; a unit made beyond demand is\nscrap at `SalvagePrice = $2`.\n\n## A shift, in order\n\n1. **Open.** The orders, payroll and split the manager announced last shift come\n   into force; last shift's worker reports reach the manager; a `shift` event is\n   recorded. At shift 0 the orders are each machine's own setup, `payroll = 30`,\n   `split = [25,25,25,25]` and the standing directive is\n   \"Standing order: machines 1-3 on line A, machine 4 on line B. Six hours\n   running, three on maintenance.\"\n2. **Deadline check**, before the batch, never mid-shift.\n3. **Collect.** All five seats decide **simultaneously**, in one parallel LLM\n   batch. Nothing decided in shift `s` is visible to any other seat before\n   shift `s + 1`.\n4. **The manager's memo** is applied first: `orders`, `payroll` (0..60) and\n   `split` are stored **for shift s+1**; the directive is stripped, newlines\n   collapsed and truncated at 240 runes; an empty directive leaves the standing\n   one unchanged.\n5. **The four workers** are applied in machine order. `run` and `maint` are each\n   0..10 and together at most 10; the line is A or B; the report is capped at\n   120 runes.\n6. **Resolve**, per machine, deterministically:\n   - changing line costs `ChangeoverHours = 2` of the running hours;\n     `hours = max(0, run - changeover)`;\n   - `q = 0.5 + 0.5 x condition/100`, on the condition at the START of the shift;\n   - `units = floor(2.0 x hours x q)`;\n   - `condition = clamp(condition - 3 x hours + 6 x maint, 0, 100)`;\n   - `toil = 1.50 x (run + maint)`.\n7. **Sell.** `sold = min(produced, demand)` per line; the rest is scrap.\n   `revenue = 10 x sold + 2 x scrap`.\n8. **Pay.** `pool = revenue x payroll/100`; `pay[machine] = pool x share/100`;\n   `profit = revenue - pool`.\n9. **Score.** `workerNet += pay - toil`; `firmProfit += profit`.\n10. A `settle` event records the whole settlement, then the next shift opens.\n\nThe manager acts on every shift including the last; the last memo is recorded and\nrendered but governs nothing.\n\n## What each seat sees\n\n- **The manager** sees the board (this shift and next, plus the realized\n  history), the prices, every machine's number, operator alias, setup, order,\n  units and pay, the share table, the ledger, last shift's reports, and its own\n  notes. It **never** sees any machine's condition, any worker's hours or effort,\n  or demand more than one shift ahead.\n- **A worker** sees its own machine's condition, setup, order, hours, units, pay\n  and effort, the standing directive, the pay rule in force including all four\n  shares, the public shop floor (every machine's setup, order and units last\n  shift), its own pay history, and its own notes. It **never** sees the order\n  board, the prices, the firm's revenue or profit, another machine's condition,\n  or another worker's report.\n\n## Replies\n\nManager: `{\"orders\": [\"B\",\"B\",\"A\",\"A\"], \"payroll\": 40, \"split\": [30,30,20,20],\n\"directive\": \"...\", \"notes\": \"...\"}`. An unrecognised or missing order keeps that\nmachine's previous order; a split that does not sum to 100 is renormalized by\nlargest remainder; a missing or out-of-range payroll is invalid.\n\nWorker: `{\"line\": \"B\", \"run\": 7, \"maint\": 3, \"report\": \"...\", \"notes\": \"...\"}`. An\nunrecognised or missing line keeps the machine's current setup; a missing or\nout-of-range `run`, or `run + maint > 10`, is invalid.\n\nInvalid means one retry with a hint, then the `steady` scripted baseline. Every\nrecorded string is truncated on RUNE boundaries.\n\n## Endings\n\n- `complete` - all shifts resolved.\n- `deadline` - the play deadline (60% of `episodeTimeoutSeconds`) was reached\n  between shifts. Scores are normalized by the shifts actually played, so a short\n  honest episode is on the same scale as a full one. There is no other ending.\n"
+          }
+        },
+        {
+          "id": "scoring.md",
+          "title": "scoring.md",
+          "content": {
+            "type": "text",
+            "value": "# Firm scoring\n\nComputed once, when the episode settles. Let `n` be the shifts actually played.\nIf `n == 0` every score is `0.0`. **Higher is better everywhere.**\n\n- **Worker seat**: `score = workerNet / (n x 30.0)`, where\n  `workerNet = sum over shifts of (pay - toil)`. A worker scores its take-home\n  pay net of the effort it cost - negative if it toiled for less than nothing.\n- **Manager seat**: `score = firmProfit / (n x 300.0)`, where\n  `firmProfit = sum over shifts of (revenue - pool)`.\n\n**The league ranks by `results.scores[seat]`** - that normalized per-shift net -\nand the ladder ranks seats by mean episode score. There is exactly one ladder\nstatistic and both roles are on it.\n\n## Why the scales\n\nRaw profit runs in the hundreds a shift and raw worker pay in the tens. Since the\nseed permutes roles, an un-normalized score would make the ladder a lottery over\nrole draws. The scales are calibrated on a competently run firm: four machines at\nrun 6 / maint 3 with fresh condition make 12 units each (48 total); against a\nboard of A 33 / B 15 with three machines on A and one on B that is 45 sold and 3\nscrapped, so `revenue = 10 x 45 + 2 x 3 = $456`. At payroll 40 the pool is\n$182.40, each worker is paid $45.60 against $13.50 of effort (net $32.10, score\n**1.07**) and the firm keeps $273.60 (score **0.91**). At payroll 30 the same\nfloor gives the worker 0.69 and the manager 1.06. Both roles land near +1 when the\nfirm is run well, and the payroll dial is a visible tug between them.\n\n## The marginal hour\n\nOne extra running hour on a healthy machine makes 2 units, worth **$20** if they\nare sellable. Of that, `payroll%` goes to the pool and the worker keeps its\n`share%` of the pool: at payroll 30 and an equal 25% split that is\n`0.25 x 0.30 x 20 = $1.50` - exactly `ToilPerHour`. **At the default pay rule a\nworker is precisely indifferent between working and shirking.** The manager has to\nbuy effort: at payroll 40 the same hour pays the worker $2.00 against $1.50 of\ntoil and the manager still keeps $12. A worker cut to a 10% share earns $0.80 an\nhour at payroll 40 and rationally goes idle - that is the mutiny, and it is\nmechanical, not scripted.\n\nUnits made on the *wrong* line fetch salvage $2, so an hour on a mis-directed\nmachine yields $4 of revenue and pays almost nobody: a bad directive destroys the\nincentive to work at all.\n\n## Maintenance, the hidden half\n\n`3 x run` of wear against `6 x maint` of repair makes **run 6 / maint 3** the\nsustainable pace (net zero, one hour idle). Run 7 / maint 3 drifts down 3 a shift;\nrun 10 / maint 0 burns 30 a shift and halves a machine's output in three shifts.\nMaintenance costs the worker effort now and pays back in future output, most of\nwhich the firm keeps - so an underpaid worker rationally lets the machine die. The\nmanager sees the falling units and cannot tell that from shirking, because hours\nand condition are invisible from the office. That confusion is the benchmark.\n\n## What results report\n\n`names` (policy names), `scores`, `roles`, `pay` (each worker's NET, 0.0 on the\nmanager seat), `units` (0 on the manager seat), the firm's `revenue`, `wages` and\n`profit`, `shifts`, `maxShifts` and `reason`.\n"
+          }
+        }
+      ]
+    }
+  },
+  "player": [
+    {
+      "id": "firm-player",
+      "name": "Firm Prompt Player",
+      "type": "player",
+      "description": "The reference Firm policy: delivers its PLAYER_PROMPT (or a default strategy covering both roles) to the game and spectates until the final frame. The seed deals the office, so a prompt must say what to do as the manager AND as a machine operator. Field your own policy by uploading this same image with a different PLAYER_PROMPT.",
+      "image": "{{FIRM_IMAGE}}",
+      "run": [
+        "/bin/firm-player"
+      ],
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "64Mi"
+        },
+        "limits": {
+          "cpu": "1"
+        }
+      },
+      "source_url": "https://github.com/Metta-AI/cogame-firm/tree/main"
+    },
+    {
+      "id": "firm-steady",
+      "name": "Firm Steady Baseline",
+      "type": "player",
+      "description": "The scripted competent baseline as a fieldable policy: as a worker it obeys its orders, runs 6 hours and maintains 3 (exactly break-even on wear), nurses a machine under condition 40 at run 4 / maint 6, and reports its real numbers; as a manager it splits the machines across the lines by next shift's board, pays 40% of revenue and shares the pool by last shift's units. Deterministic, no LLM involved.",
+      "image": "{{FIRM_IMAGE}}",
+      "run": [
+        "/bin/firm-player"
+      ],
+      "env": {
+        "PLAYER_SCRIPTED": "steady"
+      },
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "64Mi"
+        },
+        "limits": {
+          "cpu": "1"
+        }
+      },
+      "source_url": "https://github.com/Metta-AI/cogame-firm/tree/main"
+    },
+    {
+      "id": "firm-taskmaster",
+      "name": "Firm Taskmaster Baseline",
+      "type": "player",
+      "description": "The scripted drive-it-into-the-ground baseline: as a worker it obeys its orders, runs all ten hours and never maintains, killing the machine in three shifts; as a manager it puts all four machines on the bigger book, pays 20% of revenue and splits it evenly. Deterministic, no LLM involved.",
+      "image": "{{FIRM_IMAGE}}",
+      "run": [
+        "/bin/firm-player"
+      ],
+      "env": {
+        "PLAYER_SCRIPTED": "taskmaster"
+      },
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "64Mi"
+        },
+        "limits": {
+          "cpu": "1"
+        }
+      },
+      "source_url": "https://github.com/Metta-AI/cogame-firm/tree/main"
+    }
+  ],
+  "variants": [
+    {
+      "id": "standard",
+      "name": "Standard shift",
+      "description": "Five cogs, one office, four machines, eight shifts; the order board switches lines once and the workers may report.",
+      "game_config": {
+        "players": [
+          {
+            "name": "Player1"
+          },
+          {
+            "name": "Player2"
+          },
+          {
+            "name": "Player3"
+          },
+          {
+            "name": "Player4"
+          },
+          {
+            "name": "Player5"
+          }
+        ],
+        "num_agents": 5,
+        "shifts": 8,
+        "reports": true,
+        "turnDelayMs": 400,
+        "player_connect_timeout_seconds": 180
+      }
+    },
+    {
+      "id": "silent-floor",
+      "name": "Silent floor",
+      "description": "The same firm with the workers' report channel closed: the manager gets numbers and nothing else.",
+      "game_config": {
+        "players": [
+          {
+            "name": "Player1"
+          },
+          {
+            "name": "Player2"
+          },
+          {
+            "name": "Player3"
+          },
+          {
+            "name": "Player4"
+          },
+          {
+            "name": "Player5"
+          }
+        ],
+        "num_agents": 5,
+        "shifts": 8,
+        "reports": false,
+        "turnDelayMs": 400,
+        "player_connect_timeout_seconds": 180
+      }
+    }
+  ],
+  "certification": {
+    "game_config": {
+      "players": [
+        {
+          "name": "Sprocket"
+        },
+        {
+          "name": "Gizmo"
+        },
+        {
+          "name": "Ratchet"
+        },
+        {
+          "name": "Widget"
+        },
+        {
+          "name": "Bolt"
+        }
+      ],
+      "num_agents": 5,
+      "seed": 7,
+      "shifts": 4,
+      "turnDelayMs": 0,
+      "player_connect_timeout_seconds": 180
+    },
+    "players": [
+      {
+        "player_id": "firm-player"
+      },
+      {
+        "player_id": "firm-steady"
+      },
+      {
+        "player_id": "firm-player"
+      },
+      {
+        "player_id": "firm-taskmaster"
+      },
+      {
+        "player_id": "firm-steady"
+      }
+    ]
+  }
+}

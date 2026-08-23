@@ -1,0 +1,7 @@
+services:
+  firm:
+    image: coworld-firm:latest
+    platform: linux/amd64
+    build:
+      context: .
+      network: host
