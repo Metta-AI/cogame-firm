@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Firm — Replay</title>
+<link rel="stylesheet" href="/client/chrome.css">
+</head>
+<body>
+<div id="layout">
+  <div id="stage">
+    <div id="topband">
+      <div id="wordmark">THE<span>FIRM</span></div>
+      <div id="clock">SHIFT 0</div>
+      <div id="topright">
+        <span id="statuschip">replay</span>
+        <button id="feedtoggle">LOG »</button>
+      </div>
+    </div>
+    <div id="scorebug"></div>
+    <!-- FIRM additions to the inherited cogame-bullwhip chrome: one element,
+         the order-board readout, between the scorebug and the board. Nothing
+         the starter ships is removed. -->
+    <div id="demandbar"></div>
+    <div id="board-wrap">
+      <canvas id="table" width="960" height="640"></canvas>
+      <div id="lightpool"></div>
+      <div id="grain"></div>
+      <div id="endscreen"></div>
+    </div>
+    <div id="transport">
+      <div class="scrub" id="scrub"></div>
+      <div class="tbar">
+        <button class="tbtn" id="play">❚❚</button>
+        <span class="tpos" id="pos">0 / 0</span>
+      </div>
+    </div>
+    </div>
+  <div id="feed"></div>
+</div>
+<div id="loading">LOADING REPLAY…</div>
+<script src="/client/renderer.js"></script>
+<script>
+  var canvas = document.getElementById("table");
+  function fit() {
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+  }
+  window.addEventListener("resize", fit);
+  window.addEventListener("load", fit);
+  fit();
+  FirmRenderer.bindFeedToggle(document.getElementById("feedtoggle"), true);
+  var scheme = location.protocol === "https:" ? "wss://" : "ws://";
+  var socket = new WebSocket(scheme + location.host + "/replay");
+  socket.onmessage = function (frame) {
+    var payload = JSON.parse(frame.data);
+    if (payload.type !== "replay") return;
+    document.getElementById("loading").style.display = "none";
+    fit();
+    FirmRenderer.attachReplay({
+      canvas: canvas,
+      feed: document.getElementById("feed"),
+      scrub: document.getElementById("scrub"),
+      playButton: document.getElementById("play"),
+      label: document.getElementById("pos"),
+      clock: document.getElementById("clock"),
+      scorebug: document.getElementById("scorebug"),
+      demandbar: document.getElementById("demandbar"),
+      endscreen: document.getElementById("endscreen"),
+      assetBase: "/client/assets",
+      payload: payload
+    });
+    socket.onmessage = null;
+  };
+  socket.onerror = function () {
+    document.getElementById("loading").textContent = "REPLAY FAILED TO LOAD";
+  };
+</script>
+<script>
+  // FIRM additions to the inherited cogame-bullwhip chrome.
+  // The transport band's real height and the HUD scale live on :root, so the
+  // canvas and the custom properties can never disagree: relayout() measures
+  // #transport, publishes --band and --hudscale, and calls the starter's
+  // fit() itself. Nothing is ever overlaid inside the band — #transport is
+  // the last child of #stage in normal flow, the absolutely-positioned
+  // overlays live inside #board-wrap (which ends where the band begins), and
+  // #loading is pinned above it with bottom: var(--band).
+  function relayout() {
+    var root = document.documentElement;
+    var transport = document.getElementById("transport");
+    var band = transport ? transport.offsetHeight : 0;
+    root.style.setProperty("--band", band + "px");
+    root.style.setProperty("--hudscale",
+      String(Math.max(0.8, Math.min(window.innerWidth / 960, 1.15))));
+    fit();
+  }
+  window.addEventListener("load", relayout);
+  window.addEventListener("resize", relayout);
+  relayout();
+</script>
+</body>
+</html>
