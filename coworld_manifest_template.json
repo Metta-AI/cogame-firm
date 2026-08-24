@@ -280,7 +280,7 @@
       "id": "firm-steady",
       "name": "Firm Steady Baseline",
       "type": "player",
-      "description": "The scripted competent baseline as a fieldable policy: as a worker it obeys its orders, runs 6 hours and maintains 3 (exactly break-even on wear), nurses a machine under condition 40 at run 4 / maint 6, and reports its real numbers; as a manager it splits the machines across the lines by next shift's board, pays 40% of revenue and shares the pool by last shift's units. Deterministic, no LLM involved.",
+      "description": "The scripted competent baseline as a fieldable policy: as a worker it obeys its orders, runs 6 hours and maintains 3 (exactly break-even on wear), nurses a machine under condition 70 by spending the shift in the shop (run 0 / maint 8), and reports its real numbers; as a manager it splits the machines across the lines by next shift's board, pays 40% of revenue and shares the pool by last shift's units. Deterministic, no LLM involved.",
       "image": "{{FIRM_IMAGE}}",
       "run": [
         "/bin/firm-player"
