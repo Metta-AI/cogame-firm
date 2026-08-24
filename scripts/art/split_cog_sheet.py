@@ -16,7 +16,7 @@ Owns (nano-banana renders, regenerate with generate_cog_sheet.py):
     data/cog_worker_green.png  cog_worker_yellow.png
 
 Does NOT own the coworld-ctf assets the starter shipped (arena_floor.png,
-font.ttf, soldier_*_front.png).
+font.ttf, soldier_red_front.png).
 """
 
 import collections

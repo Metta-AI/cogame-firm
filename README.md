@@ -95,8 +95,9 @@ GEMINI_API_KEY=... python3 scripts/art/generate_cog_sheet.py
 python3 scripts/art/split_cog_sheet.py
 ```
 
-`data/soldier_*_front.png` are the coworld-ctf sprites the starter shipped; they
-are no longer drawn but remain as the style reference the generator anchors on.
+`data/soldier_red_front.png` is the one coworld-ctf sprite the starter shipped that
+is still used: nothing draws it, but `generate_cog_sheet.py` anchors the character
+design on it. The other three colours were shipped residue and have been removed.
 
 ## Local loop
 
