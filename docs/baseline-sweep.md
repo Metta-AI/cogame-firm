@@ -36,8 +36,9 @@ Both families are scored at two horizons (the fitted default of 8 shifts and the
 ## The result
 
 Recorded from CI run
-[32681924601](https://github.com/Metta-AI/cogame-firm/actions/runs/32681924601), job `test`
-(debug and `-d:release` printed identical tables).
+[32682573460](https://github.com/Metta-AI/cogame-firm/actions/runs/32682573460) on `main`
+(sha 316f380), job `test` — debug and `-d:release` printed identical tables, and every later run
+of that job reprints them.
 
 ### Family S — pace and pay rule (594 candidates, best first)
 
