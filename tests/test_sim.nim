@@ -19,15 +19,15 @@ proc flatBoard(sim: var Sim, wantA, wantB: int) =
     sim.demandB[index] = wantB
 
 proc memo(sim: var Sim, orders: seq[string], payroll: int, split: seq[int],
-    directive = "", notes = "") =
+    directive = "", notes = "", scripted = true) =
   sim.applyMemo(sim.managerSeat, orders, payroll, split, directive, notes,
-    true)
+    scripted)
 
 proc work(sim: var Sim, lines: array[Machines, string],
-    runs, maints: array[Machines, int], report = "") =
+    runs, maints: array[Machines, int], report = "", scripted = true) =
   for worker in 0 ..< Machines:
     sim.applyWork(sim.workerSeat[worker], lines[worker], runs[worker],
-      maints[worker], report, "", true)
+      maints[worker], report, "", scripted)
 
 proc currentSetups(sim: Sim): array[Machines, string] =
   for worker in 0 ..< Machines:
@@ -460,6 +460,25 @@ suite "replay":
     check shortFrames[^1].done
     check shortFrames[^1].reason == "deadline"
     check shortFrames[^1].shiftsPlayed == 1
+
+  test "the spectator frame tells a scripted seat from a live one":
+    ## The frame's per-seat `scripted` key was hard-coded false, so a replay
+    ## claimed every seat was LLM-driven even on an all-baseline table.
+    let config = fixtureConfig(shifts = 4, seed = 31)
+    var live = initSim(config)
+    live.memo(@["A", "A", "A", "B"], 40, @[25, 25, 25, 25], scripted = false)
+    check not live.tableStateJson()["seats"][live.managerSeat][
+      "scripted"].getBool()
+    for worker in 0 ..< Machines:
+      live.applyWork(live.workerSeat[worker], "A", 6, 3, "", "", worker == 1)
+    let frame = live.tableStateJson()
+    check frame["seats"][live.workerSeat[1]]["scripted"].getBool()
+    check not frame["seats"][live.workerSeat[0]]["scripted"].getBool()
+    check not frame["seats"][live.managerSeat]["scripted"].getBool()
+    ## The viewer derives its frames from the same re-derivation, so the
+    ## provenance has to survive the round trip through the event log.
+    let frames = replayMatch(config, live.events)
+    check $frames[^1].tableStateJson() == $frame
 
   test "a tampered recording is rejected":
     let config = fixtureConfig(shifts = 5, seed = 29)

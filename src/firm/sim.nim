@@ -72,6 +72,8 @@ type
     reports*: array[Machines, string]      ## this shift's worker reports
     heardReports*: array[Machines, string] ## last shift's, read by the manager
     memoDone*: bool                  ## the manager has acted this shift
+    scriptedSeat*: array[Seats, bool] ## seat's last applied decision was a
+                                     ## baseline's, not a reply's
     notes*: seq[string]              ## latest private notes per seat
     history*: seq[ShiftResult]       ## one record per resolved shift
     board*: seq[tuple[a, b: int]]    ## realized demand, shifts 0 .. shift
@@ -442,6 +444,7 @@ proc applyMemo*(sim: var Sim, seat: int, orders: seq[string], payroll: int,
   if notes.len > 0:
     sim.notes[seat] = notes
   sim.memoDone = true
+  sim.scriptedSeat[seat] = scripted
   var event = blankEvent(evMemo)
   event.shift = sim.shift
   event.seat = seat
@@ -490,6 +493,7 @@ proc applyWork*(sim: var Sim, seat: int, line: string, run, maint: int,
   sim.reports[worker] = message
   if notes.len > 0:
     sim.notes[seat] = notes
+  sim.scriptedSeat[seat] = scripted
   var event = blankEvent(evWork)
   event.shift = sim.shift
   event.seat = seat
@@ -606,7 +610,7 @@ proc tableStateJson*(sim: Sim): JsonNode =
       }
     node["notes"] = %sim.notes[seat]
     node["pending"] = %(seat in pending)
-    node["scripted"] = %false
+    node["scripted"] = %sim.scriptedSeat[seat]
     seats.add(node)
   var workerSeat = newJArray()
   var machines = newJArray()
