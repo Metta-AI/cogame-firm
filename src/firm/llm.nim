@@ -30,14 +30,8 @@ const
   BedrockAnthropicVersion = "bedrock-2023-05-31"
   ## The private notebook a seat may carry between shifts.
   MaxNotesLen* = 600
-  ## The competent baseline's pace: wear 3/hour against repair 6/hour makes
-  ## run 6 / maint 3 exactly sustainable.
-  SteadyRun = 6
-  SteadyMaint = 3
-  NurseRun = 4
-  NurseMaint = 6
-  NurseBelow = 40
-  SteadyPayroll = 40
+  ## The foil baseline pays as little as the rules allow: below the $1.50/hour
+  ## indifference point by construction, so it is not a tuned dial.
   TaskmasterPayroll = 20
 
 type
@@ -45,6 +39,16 @@ type
     skNone = "none"
     skSteady = "steady"
     skTaskmaster = "taskmaster"
+
+  BaselineParams* = object
+    ## The `steady` baseline's dials. NOT hand-picked: `tests/test_tuning.nim`
+    ## sweeps this grid over seeded all-scripted episodes through this very
+    ## `scriptedAction` and asserts `ShippedBaseline` is the argmax; the run
+    ## it was taken from is recorded in `docs/baseline-sweep.md`.
+    run*, maint*: int            ## the pace on a healthy machine
+    nurseRun*, nurseMaint*: int  ## the pace on a machine below `nurseBelow`
+    nurseBelow*: int             ## condition at which the machine goes in the shop
+    payroll*: int                ## the pool the manager announces
 
   Decision* = object
     ## One seat's move. The manager fills orders/payroll/split, a worker
@@ -72,6 +76,25 @@ type
     maxOutputTokens: int
     timeoutSeconds: int
     disabled*: bool   ## true once credentials are known-unavailable
+
+const
+  # The argmax of the grid sweep in tests/test_tuning.nim, recorded in
+  # docs/baseline-sweep.md. run 6 / maint 3 is the sustainable pace (wear
+  # 3/hour against repair 6/hour) AND the sweep's unique argmax; payroll 40
+  # is the pool at which the manager and the workers score alike, so the
+  # weakest seat at the table is highest.
+  #
+  # The nurse deviates from the design note's "run 4 / maint 6 below 40": on
+  # the fallback-recovery family (a wrecked machine handed back to the
+  # baseline) the note's drip repair is dominated - a full shift in the shop
+  # restores the machine in one shift instead of four, and repairing at 8
+  # hours rather than 10 buys the same 100 condition for less toil. Disclosed
+  # in docs/baseline-sweep.md and in the r1 fixes note.
+  ShippedBaseline* = BaselineParams(
+    run: 6, maint: 3,
+    nurseRun: 0, nurseMaint: 8, nurseBelow: 70,
+    payroll: 40
+  )
 
 proc parseScriptKind*(text: string): ScriptKind =
   ## PLAYER_SCRIPTED values: "1"/"true"/"yes"/"steady" play the competent
@@ -210,9 +233,12 @@ proc steadySplit(sim: Sim): seq[int] =
   for worker in 0 ..< Machines:
     result.add(shares[worker])
 
-proc scriptedAction*(sim: Sim, seat: int, kind: ScriptKind): Decision =
+proc scriptedAction*(sim: Sim, seat: int, kind: ScriptKind,
+    params: BaselineParams = ShippedBaseline): Decision =
   ## Rule-based baseline for `seat`, whichever role the seed dealt it.
-  ## Always legal by construction; never writes notes.
+  ## Always legal by construction; never writes notes. `params` is the tuning
+  ## harness's handle on the `steady` dials — production always takes the
+  ## default, `ShippedBaseline`.
   let effective = if kind == skNone: skSteady else: kind
   if sim.isManager(seat):
     let ahead = min(sim.shift + 1, sim.demandA.high)
@@ -227,7 +253,7 @@ proc scriptedAction*(sim: Sim, seat: int, kind: ScriptKind): Decision =
         ". Ten hours running. Maintenance is not output."
     else:
       result.orders = steadyOrders(sim)
-      result.payroll = SteadyPayroll
+      result.payroll = params.payroll
       result.split = steadySplit(sim)
       var onA: seq[string]
       var onB: seq[string]
@@ -253,12 +279,12 @@ proc scriptedAction*(sim: Sim, seat: int, kind: ScriptKind): Decision =
       result.maint = 0
       result.say = machineLabel(worker) & ": ten hours, no stoppages."
     else:
-      if sim.machines[worker].condition < NurseBelow:
-        result.run = NurseRun
-        result.maint = NurseMaint
+      if sim.machines[worker].condition < params.nurseBelow:
+        result.run = params.nurseRun
+        result.maint = params.nurseMaint
       else:
-        result.run = SteadyRun
-        result.maint = SteadyMaint
+        result.run = params.run
+        result.maint = params.maint
       result.say = honestReport(sim, worker)
 
 # ---- Prompt building --------------------------------------------------------
