@@ -302,7 +302,8 @@ suite "the pay rule":
   test "recorded text is cut on rune boundaries":
     var sim = initSim(fixtureConfig(shifts = 4, seed = 1))
     var long = ""
-    for index in 0 ..< 400:
+    ## Past the LARGEST cap (notes, 600), so every cut below is a real cut.
+    for index in 0 ..< 700:
       long.add("é")
     sim.memo(@["A", "A", "A", "B"], 40, @[25, 25, 25, 25], long, long)
     check sim.directive.runeLen == MaxDirectiveLen
