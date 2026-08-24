@@ -304,10 +304,18 @@ suite "the pay rule":
     var long = ""
     for index in 0 ..< 400:
       long.add("é")
-    sim.memo(@["A", "A", "A", "B"], 40, @[25, 25, 25, 25], long)
+    sim.memo(@["A", "A", "A", "B"], 40, @[25, 25, 25, 25], long, long)
     check sim.directive.runeLen == MaxDirectiveLen
     check sim.directive.validateUtf8() == -1
-    sim.work(sim.currentSetups(), [6, 6, 6, 6], [3, 3, 3, 3], report = long)
+    ## Notes are capped at the SIM boundary too, not only in the parser: the
+    ## note is copied into the event's `text` and reaches the replay.
+    check sim.notes[sim.managerSeat].runeLen == MaxNotesLen
+    check sim.notes[sim.managerSeat].validateUtf8() == -1
+    check sim.events[^1].text.runeLen == MaxNotesLen
+    for worker in 0 ..< Machines:
+      sim.applyWork(sim.workerSeat[worker], sim.machines[worker].setup, 6, 3,
+        long, long, true)
+      check sim.notes[sim.workerSeat[worker]].runeLen == MaxNotesLen
     for worker in 0 ..< Machines:
       check sim.heardReports[worker].runeLen == MaxReportLen
       check sim.heardReports[worker].validateUtf8() == -1

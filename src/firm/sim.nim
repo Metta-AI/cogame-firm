@@ -37,6 +37,10 @@ const
   PlayBudgetFraction* = 0.6
   MaxDirectiveLen* = 240
   MaxReportLen* = 120
+  ## The private notebook a seat may carry between shifts. It lives here,
+  ## with the other caps, because applyMemo/applyWork enforce it: the parser
+  ## is not the only way into the sim.
+  MaxNotesLen* = 600
   RoleNames* = ["Manager", "Worker"]
   LineNames* = ["A", "B"]
   StandingOrder* = "Standing order: machines 1-3 on line A, machine 4 on " &
@@ -442,7 +446,7 @@ proc applyMemo*(sim: var Sim, seat: int, orders: seq[string], payroll: int,
   if memo.len > 0:
     sim.directive = memo
   if notes.len > 0:
-    sim.notes[seat] = notes
+    sim.notes[seat] = trimText(notes, MaxNotesLen)
   sim.memoDone = true
   sim.scriptedSeat[seat] = scripted
   var event = blankEvent(evMemo)
@@ -492,7 +496,7 @@ proc applyWork*(sim: var Sim, seat: int, line: string, run, maint: int,
   sim.maints[worker] = maint
   sim.reports[worker] = message
   if notes.len > 0:
-    sim.notes[seat] = notes
+    sim.notes[seat] = trimText(notes, MaxNotesLen)
   sim.scriptedSeat[seat] = scripted
   var event = blankEvent(evWork)
   event.shift = sim.shift
