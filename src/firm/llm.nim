@@ -496,8 +496,10 @@ proc extractJsonObject*(text: string): JsonNode =
     ## Quote the head of the reply so a hosted log shows WHAT the model
     ## sent instead of JSON (prose, a refusal, a cut-off analysis...).
     var head = text.strip()
-    if head.len > 160:
-      head = head[0 ..< 160] & "..."
+    ## Cut on a RUNE boundary: these messages are echoed to the container log
+    ## and half a multi-byte character there is unreadable.
+    if head.runeLen > 160:
+      head = head.runeSubStr(0, 160) & "..."
     raise newException(FirmError, "no JSON object in response: " &
       head.replace("\n", " "))
   parseJson(text[start .. stop])
@@ -536,7 +538,7 @@ proc textOf(client: LlmClient, response: Response, error, url: string):
   if error.len > 0:
     raise newException(FirmError, "llm transport: " & error)
   if response.code == 401 or response.code == 403:
-    let detail = response.body[0 .. min(response.body.high, 400)]
+    let detail = response.body.runeSubStr(0, 400)
     if "Model access is denied" in response.body and
         client.tryNextBedrockModel("no model access"):
       raise newException(FirmError, "bedrock model access denied: " & detail)
@@ -544,12 +546,12 @@ proc textOf(client: LlmClient, response: Response, error, url: string):
     raise newException(FirmError,
       "llm auth failed (" & $response.code & ") at " & url & ": " & detail)
   if response.code == 429:
-    let detail = response.body[0 .. min(response.body.high, 300)]
+    let detail = response.body.runeSubStr(0, 300)
     discard client.tryNextBedrockModel("throttled")
     raise newException(FirmError, "llm throttled (429): " & detail)
   if response.code < 200 or response.code >= 300:
     raise newException(FirmError, "anthropic error " & $response.code &
-      ": " & response.body[0 .. min(response.body.high, 300)])
+      ": " & response.body.runeSubStr(0, 300))
   let payload = parseJson(response.body)
   if payload{"stop_reason"}.getStr() == "refusal":
     raise newException(FirmError, "anthropic refusal")
@@ -558,7 +560,7 @@ proc textOf(client: LlmClient, response: Response, error, url: string):
       result.add(contentBlock{"text"}.getStr())
   if payload{"stop_reason"}.getStr() == "max_tokens" and '{' notin result:
     raise newException(FirmError, "reply cut off at max_tokens before " &
-      "any JSON: " & result[0 .. min(result.high, 160)].replace("\n", " "))
+      "any JSON: " & result.runeSubStr(0, 160).replace("\n", " "))
 
 proc cleanText*(text: string, limit: int): string =
   ## Text over the cap is cut at a RUNE boundary with the cut marked, so a

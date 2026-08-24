@@ -298,6 +298,20 @@ suite "reply parsing":
     check parseScriptKind("taskmaster") == skTaskmaster
     check parseScriptKind("") == skNone
 
+  test "a reply with no JSON is quoted back on rune boundaries":
+    ## The quoted head goes to the container log, which phase 60 reads; a
+    ## byte slice through a multi-byte character makes it unreadable.
+    var long = ""
+    for index in 0 ..< 400:
+      long.add("é")
+    expect FirmError:
+      discard extractJsonObject(long)
+    try:
+      discard extractJsonObject(long)
+    except FirmError as error:
+      check error.msg.validateUtf8() == -1
+      check error.msg.runeLen < long.runeLen
+
   test "prompts carry the seat's own view and nothing hidden":
     var sim = initSim(fixture(7, shifts = 8, reports = false))
     for seat in sim.orderedSeats():
