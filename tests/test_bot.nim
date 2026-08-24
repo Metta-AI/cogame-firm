@@ -151,6 +151,18 @@ suite "scripted baselines":
             $machine.maint & ", " & $machine.units & " units."
         sim.apply(seat, decision)
 
+  test "a scripted move carries its own provenance; a parsed reply does not":
+    ## The seat's static registration cannot tell you that an LLM seat fell
+    ## back mid-episode, and phase 60 counts fallbacks from the replay — so
+    ## the flag rides on the decision.
+    let sim = initSim(fixture(9))
+    check scriptedAction(sim, sim.managerSeat, skSteady).scripted
+    check scriptedAction(sim, sim.workerSeat[0], skTaskmaster).scripted
+    check not parseManagerReply(sim, parseJson(
+      """{"payroll": 30}""")).scripted
+    check not parseWorkerReply(sim, sim.workerSeat[0], parseJson(
+      """{"run": 5}""")).scripted
+
   test "with no credentials every seat plays scripted, with no network call":
     let config = fixture(3, shifts = 6)
     let client = newLlmClient(config)
@@ -172,6 +184,7 @@ suite "scripted baselines":
       check decisions[index].line == expected.line
       check decisions[index].run == expected.run
       check decisions[index].payroll == expected.payroll
+      check decisions[index].scripted
       sim.apply(seat, decisions[index])
     check sim.shift == 1
 

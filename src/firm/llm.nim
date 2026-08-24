@@ -60,6 +60,7 @@ type
     run*, maint*: int
     say*: string
     notes*: string      ## "" when the reply carried none
+    scripted*: bool     ## this move came from a baseline, not from a reply
 
   LlmTransport = enum
     ltNone, ltBedrock, ltAnthropic
@@ -240,6 +241,9 @@ proc scriptedAction*(sim: Sim, seat: int, kind: ScriptKind,
   ## harness's handle on the `steady` dials — production always takes the
   ## default, `ShippedBaseline`.
   let effective = if kind == skNone: skSteady else: kind
+  ## Provenance rides on the decision itself: a seat that fell back mid
+  ## episode must be recorded as scripted in the replay, not just on stdout.
+  result.scripted = true
   if sim.isManager(seat):
     let ahead = min(sim.shift + 1, sim.demandA.high)
     case effective

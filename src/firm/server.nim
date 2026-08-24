@@ -280,7 +280,11 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
       withLock stateLock:
         for index, seat in seats:
           let decision = decisions[index]
-          let wasScripted = scripted[seat] != skNone or client.disabled
+          ## Per DECISION, not per seat: a seat registered as LLM-driven whose
+          ## reply failed twice fell back to the baseline, and the replay is
+          ## where phase 60 counts those.
+          let wasScripted = decision.scripted or
+            scripted[seat] != skNone or client.disabled
           let isManager = state.sim.isManager(seat)
           if isManager:
             echo "firm: shift ", state.sim.shift, " ", state.sim.names[seat],
