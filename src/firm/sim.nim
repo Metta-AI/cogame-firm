@@ -552,6 +552,20 @@ proc resultsJson*(sim: Sim): JsonNode =
 
 # ---- Viewer state -----------------------------------------------------------
 
+proc obeyedNow*(sim: Sim, worker: int): bool =
+  ## Defiance is a POST-HOC fact: the machine RAN a line other than the one it
+  ## was ordered onto. At shift open the manager's new order is already
+  ## installed while `setup` still holds last shift's line, so comparing the
+  ## two would call a machine defiant before its worker has decided anything.
+  ## Once the worker has acted this shift, its chosen line is the answer;
+  ## before that, the last resolved shift's verdict stands.
+  if sim.lines[worker].len > 0:
+    sim.lines[worker] == sim.machines[worker].order
+  elif sim.history.len > 0:
+    sim.history[^1].obeyed[worker]
+  else:
+    true
+
 proc machineJson*(machine: MachineState): JsonNode =
   %*{
     "setup": machine.setup,
@@ -605,7 +619,7 @@ proc tableStateJson*(sim: Sim): JsonNode =
         "maint": machine.maint, "toil": machine.toil,
         "say": sim.reports[worker],
         "net": sim.workerNet[worker],
-        "obeyed": machine.setup == machine.order,
+        "obeyed": sim.obeyedNow(worker),
         "idle": machine.run == 0
       }
     node["notes"] = %sim.notes[seat]
@@ -630,7 +644,7 @@ proc tableStateJson*(sim: Sim): JsonNode =
       "pay": machine.pay,
       "toil": machine.toil,
       "share": sim.split[worker],
-      "obeyed": machine.setup == machine.order,
+      "obeyed": sim.obeyedNow(worker),
       "idle": machine.run == 0
     })
   let shown = min(sim.shift, sim.demandA.high)

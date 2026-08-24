@@ -204,6 +204,37 @@ suite "resolution":
     sim.memo(@["B", "B", "B", "A"], 55, @[70, 10, 10, 10], "")
     check sim.directive == "switch everything"
 
+  test "defiance is a post-hoc fact, not a pending order":
+    ## `obeyed` drives the spectator's amber DEFIED chip. At shift open the
+    ## manager's new order is installed while the machine still holds last
+    ## shift's setup, so a plain setup-vs-order comparison called a machine
+    ## defiant before its worker had decided anything.
+    var sim = initSim(fixtureConfig(shifts = 5, seed = 37))
+    sim.flatBoard(40, 40)
+    sim.memo(@["B", "B", "B", "A"], 40, @[25, 25, 25, 25])
+    sim.work(sim.currentSetups(), [6, 6, 6, 6], [3, 3, 3, 3])
+    ## Shift 1 is open: every machine has been ordered to switch and nobody
+    ## has acted yet.
+    check sim.orderedLines() == ["B", "B", "B", "A"]
+    check sim.currentSetups() == ["A", "A", "A", "B"]
+    for worker in 0 ..< Machines:
+      check sim.obeyedNow(worker)
+      check sim.tableStateJson()["machines"][worker]["obeyed"].getBool()
+    ## Machine 0 obeys, machine 1 runs its old line: only machine 1 defies,
+    ## and only once it has actually run.
+    sim.memo(@["B", "B", "B", "A"], 40, @[25, 25, 25, 25])
+    sim.applyWork(sim.workerSeat[0], "B", 6, 3, "", "", true)
+    sim.applyWork(sim.workerSeat[1], "A", 6, 3, "", "", true)
+    check sim.obeyedNow(0)
+    check not sim.obeyedNow(1)
+    sim.applyWork(sim.workerSeat[2], "B", 6, 3, "", "", true)
+    sim.applyWork(sim.workerSeat[3], "A", 6, 3, "", "", true)
+    ## The shift has resolved and shift 2 is open with the same orders: the
+    ## verdict on the shift just played stands.
+    check sim.history[^1].obeyed == [true, false, true, true]
+    check sim.obeyedNow(0)
+    check not sim.obeyedNow(1)
+
 suite "the pay rule":
   test "normalizeSplit always sums to exactly 100":
     check normalizeSplit(@[1.0, 1.0, 1.0, 1.0]) == [25, 25, 25, 25]
