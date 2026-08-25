@@ -549,6 +549,43 @@ body.feed-collapsed #feed { display: none; }
 .feed-defied { font-weight: 700; }
 .feed-shift { color: var(--paper-dim); font-size: 12px; }
 
+/* A plate is five-to-seven `flex: none` spans in a stage/5 grid column. Their
+   combined natural width is wider than that column at every width the product
+   actually renders this viewer (746 px in the softmax.com featured match,
+   1408 px in the Observatory full-page replay), and a flex item that cannot
+   shrink does not get clipped -- it is painted straight over the NEXT seat's
+   name. At 746 px the spill reached 136 px, i.e. a full plate width.
+
+   Two changes. `overflow: hidden` on the plate is the invariant: whatever else
+   goes wrong, a plate can never draw outside its own column again. The ladder
+   below is what keeps that from turning into a row of ellipses -- it drops the
+   optional spans, widest and least informative first, at the widths where they
+   stop fitting. Everything dropped is still on the board: the machine number
+   and the IDLE/DEFIED state are drawn on each worker's card, and the share and
+   rating are in the demand bar and the endcard. */
+.plate { overflow: hidden; }
+#scorebug { overflow: hidden; }
+/* Pack each plate's parts to the LEFT. With the inherited `.plate-name
+   { flex: 1 1 auto }` the name absorbed the plate's spare width, so the chips
+   after it were pushed to the plate's right edge and sat directly beside the
+   NEXT seat's name -- "11 TILES daveey" reads as daveey's tile count. Slack
+   belongs at the end of the plate, not in the middle of it. */
+.plate-name { flex: 0 1 auto; }
+.plate-role, .plate-rating {
+  /* .plate-label sets `flex: none`; these two must be able to give ground. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 1200-1500 px is the one band where the role caption is shown but only just
+   fits; tightening the gaps buys the ~13 px that keeps "Machine 2" whole. */
+@media (max-width: 1500px) { #scorebug { gap: 8px; } .plate { gap: 5px; } }
+@media (max-width: 1200px) { .plate-role { display: none; } }
+@media (max-width: 1000px) { .plate-share, .plate-rating { display: none; } }
+@media (max-width: 860px) { .plate-idle, .plate-defied { display: none; } }
+
 @media (max-width: 560px) {
   .plate-label { display: none; }
   #demandbar { font-size: calc(10px * var(--hudscale)); padding: 2px 8px 4px; }
