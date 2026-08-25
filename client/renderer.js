@@ -1214,7 +1214,10 @@
         '<span class="plate-score">' +
         escapeHtml(money(isManager ? ledger.profitTotal : seat.net)) +
         "</span>" +
-        '<span class="plate-label">' +
+        // plate-role / plate-rating: both are .plate-label for styling, but the
+        // scorebug has to be able to shed them independently as the frame
+        // narrows, and "the first .plate-label" is not a thing CSS can select.
+        '<span class="plate-label plate-role">' +
         escapeHtml(isManager ? "Manager" : "Machine " + ((seat.worker || 0) + 1)) +
         "</span>" +
         (isManager ? "" : '<span class="plate-share">' + (seat.share || 0) +
@@ -1223,7 +1226,7 @@
           '<span class="plate-idle">idle</span>' : "") +
         (!isManager && !seat.obeyed ?
           '<span class="plate-defied">defied</span>' : "") +
-        '<span class="plate-label">' +
+        '<span class="plate-label plate-rating">' +
         escapeHtml((seat.score || 0).toFixed(2)) + "</span>" +
         "</div>";
     });
