@@ -175,7 +175,8 @@ suite "scripted baselines":
     var scripted = newSeq[ScriptKind](Seats)
     scripted[sim.workerSeat[1]] = skTaskmaster
     let started = getMonoTime()
-    let decisions = client.decideAll(sim, seats, prompts, scripted)
+    let decisions = client.decideAll(sim, seats, prompts, scripted,
+      newSeq[bool](Seats))
     check (getMonoTime() - started).inMilliseconds < 500
     check decisions.len == Seats
     for index, seat in seats:
@@ -187,6 +188,39 @@ suite "scripted baselines":
       check decisions[index].scripted
       sim.apply(seat, decisions[index])
     check sim.shift == 1
+
+  test "Jev ranks complete legal choices for manager and worker":
+    let sim = initSim(fixture(9))
+    for seat in [sim.managerSeat, sim.workerSeat[0]]:
+      let criteria = sim.jevCriteria(seat)
+      check criteria.len == (if sim.isManager(seat): 4 else: 3)
+      for candidate in sim.jevCandidates(seat):
+        var probe = sim
+        let action = candidate.decision
+        if sim.isManager(seat):
+          probe.applyMemo(seat, action.orders, action.payroll, action.split,
+            action.say, action.notes, false)
+        else:
+          probe.applyWork(seat, action.line, action.run, action.maint,
+            action.say, action.notes, false)
+      let preferred = if sim.isManager(seat): "high_pay" else: "rest"
+      var probabilities = newJObject()
+      for name, _ in criteria.pairs:
+        probabilities[name] = %(if name == preferred: 0.7 else:
+          0.3 / (criteria.len - 1).float)
+      let response = %*{"answers": {"decision": {
+        "type": "choice", "choice": "steady", "confidence": 0.8,
+        "probabilities": probabilities
+      }}, "usage": {"input_tokens": 10, "output_tokens": 2}}
+      let decision = sim.jevDecision(seat, response, criteria)
+      check not decision.scripted
+      if sim.isManager(seat):
+        check decision.payroll == 50
+      else:
+        check decision.run == 0
+      response["answers"]["decision"]["probabilities"][preferred] = %0.9
+      expect FirmError:
+        discard sim.jevDecision(seat, response, criteria)
 
 suite "reply parsing":
   test "the manager's reply is tolerant on orders, strict on the pay rule":

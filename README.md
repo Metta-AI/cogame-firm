@@ -35,7 +35,7 @@ maint 3** the sustainable pace and **run 10 / maint 0** a machine killed in thre
 shifts — and a worn machine makes fewer units for the same hours, which from the
 office looks exactly like shirking. **That confusion is the benchmark.**
 
-**The game is LLM-driven and a policy is just a prompt.** Every shift the game
+**The game is LLM-driven and a policy is a prompt or a Jev choice policy.** Every shift the game
 server sends each seat's policy prompt plus its role-specific view to Claude —
 all five seats as **one parallel batch**, since the shift is simultaneous — and
 Claude answers with the memo or the hours. Player containers exist only to
@@ -45,6 +45,15 @@ deliver their prompt over the websocket. Two built-in **scripted baselines** —
 that registers as scripted, and every seat when no LLM credentials are
 available, so episodes (and offline certification) always complete. Both
 baselines are **role-complete**: a policy does not know which role it will draw.
+
+With `PLAYER_JEV=1`, the game asks Jev System One to rank legal role-specific
+actions. Managers choose the tuned steady plan, the taskmaster plan, or steady
+machine assignments with a 30% or 50% payroll. Workers choose steady hours,
+ten hours of running, or rest. The server checks the full probability set and
+applies its argmax. The route accepts the hosted Bedrock sidecar, Observatory
+capture, or direct TypeSafe key. An unset `PLAYER_PROMPT` stays empty for Jev,
+so the default prompt policy does not bias the choice. Without Jev access, it
+uses steady.
 
 Seats play under **anonymous cog aliases** (Sprocket, Gizmo, …): policy display
 names never reach the agents' prompts, so nobody can meta-game "that seat is the
@@ -120,6 +129,14 @@ nim r -d:release --path:src tests/test_bot.nim # scripted-baseline tests
 nim c -d:release -o:bin/firm src/firm.nim
 nim c -d:release -o:bin/firm-player src/firm_player.nim
 nim c --hints:off -d:emscripten replay-viewer/firm_replay.nim  # wasm viewer
+
+# Matched local episodes with five WebSocket players. Export TYPESAFE_API_KEY
+# before Jev runs. Seed 1 gives seat 0 the manager role; seed 3 gives worker.
+tools/local_episode.sh steady 1 steady
+tools/local_episode.sh jev 1 steady
+tools/local_episode.sh steady 3 taskmaster
+tools/local_episode.sh jev 3 taskmaster
+nim c -r --path:src tools/jev_counterfactual.nim  # candidate payoffs
 
 # A full containerised episode (game + five players, results and replay kept):
 docker build --platform=linux/amd64 -t coworld-firm:ci .
