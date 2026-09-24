@@ -35,10 +35,10 @@ maint 3** the sustainable pace and **run 10 / maint 0** a machine killed in thre
 shifts — and a worn machine makes fewer units for the same hours, which from the
 office looks exactly like shirking. **That confusion is the benchmark.**
 
-**The game is LLM-driven and a policy is a prompt or a Jev choice policy.** Every shift the game
+**The game accepts prompt, scripted, and external-action policies.** Every shift the game
 server sends each seat's policy prompt plus its role-specific view to Claude —
 all five seats as **one parallel batch**, since the shift is simultaneous — and
-Claude answers with the memo or the hours. Player containers exist only to
+Claude answers with the memo or the hours. Prompt player containers
 deliver their prompt over the websocket. Two built-in **scripted baselines** —
 `steady` (obey, run 6 / maintain 3, report honestly, pay 40 %) and `taskmaster`
 (obey, run 10 / maintain 0, everything onto one line, pay 20 %) — play any seat
@@ -48,7 +48,8 @@ baselines are **role-complete**: a policy does not know which role it will draw.
 
 With `PLAYER_JEV=1`, the player receives its private manager or worker view,
 asks Jev System One to rank bounded shift orders, and returns one ordinary
-action. Managers choose a 30% or 50% payroll with current machine lines.
+action. Managers choose 30%, 40%, or 50% payroll and can hold or rebalance
+machine lines against next-shift demand.
 Workers choose steady hours, ten hours of running, or rest. The game validates
 and applies the order. The player checks the full probability set. It accepts
 the Bedrock sidecar, Observatory capture, or a direct TypeSafe key. Without
@@ -136,7 +137,6 @@ tools/local_episode.sh steady 1 steady
 tools/local_episode.sh jev 1 steady
 tools/local_episode.sh steady 3 taskmaster
 tools/local_episode.sh jev 3 taskmaster
-nim c -r --path:src tools/jev_counterfactual.nim  # candidate payoffs
 
 # A full containerised episode (game + five players, results and replay kept):
 docker build --platform=linux/amd64 -t coworld-firm:ci .
@@ -144,6 +144,25 @@ docker build --platform=linux/amd64 -t coworld-firm:ci .
 # Export ANTHROPIC_API_KEY for real Claude play; omit it and every seat plays
 # the scripted baselines, which is the path certification takes.
 ```
+
+The corrected player-side policy completed matched native episodes against
+steady and taskmaster opponents on one game build:
+
+| Seat 0 role | Opponents | Seeds | Steady score mean | Jev score mean |
+| --- | --- | --- | ---: | ---: |
+| Manager | steady | 1, 12, 14 | 0.946 | 1.080 |
+| Manager | taskmaster | 1, 12, 14 | 0.916 | 1.042 |
+| Worker | steady | 2–5 | 1.008 | 1.008 |
+| Worker | taskmaster | 3 | 0.186 | 0.186 |
+
+All 88 Jev decisions were accepted with no scripted fallback. Jev chose
+30% payroll, rebalanced lines on six manager shifts, and chose sustainable
+work on every worker shift. The calls used 91,380 input and 5,364 output
+tokens. At [OpenRouter's Jev 1.13 list rate](https://openrouter.ai/typesafe/jev-1.13/api),
+the input costs about $0.00384; this is a price proxy, not a TypeSafe invoice.
+Eleven episodes across seven seeds are not a win-rate estimate. The action
+menu also contains a deterministic demand-aware line allocator, so these
+scores do not isolate Jev's reasoning from that policy component.
 
 Coworld packaging (from a metta checkout):
 

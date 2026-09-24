@@ -6,19 +6,37 @@ import curly
 proc chooseAction*(observation: JsonNode): JsonNode =
   var actions = newJObject()
   if observation["role"].getStr() == "Manager":
-    var orders = newJArray()
-    for machine in observation["floor"]:
-      orders.add(machine["order"])
-    actions["low_pay"] = %*{
-      "orders": orders, "payroll": 30,
-      "split": [25, 25, 25, 25],
-      "directive": "Pool is 30% of revenue; keep assigned lines."
-    }
-    actions["high_pay"] = %*{
-      "orders": orders, "payroll": 50,
-      "split": [25, 25, 25, 25],
-      "directive": "Pool is 50% of revenue; keep assigned lines."
-    }
+    var currentOrders = newJArray()
+    var rebalanced = newSeq[string](4)
+    let wantA = observation["board"]["nextA"].getInt()
+    let wantB = observation["board"]["nextB"].getInt()
+    let countA = (4 * wantA + max(1, wantA + wantB) div 2) div
+      max(1, wantA + wantB)
+    var assignedA = 0
+    for index, machine in observation["floor"].elems:
+      currentOrders.add(machine["order"])
+      if assignedA < countA and machine["setup"].getStr() == "A":
+        rebalanced[index] = "A"
+        inc assignedA
+    var rebalanceOrders = newJArray()
+    for index in 0 ..< rebalanced.len:
+      if rebalanced[index].len == 0:
+        if assignedA < countA:
+          rebalanced[index] = "A"
+          inc assignedA
+        else:
+          rebalanced[index] = "B"
+      rebalanceOrders.add(%rebalanced[index])
+    for payroll in [30, 40, 50]:
+      for allocation in ["hold", "rebalance"]:
+        actions[$payroll & "_" & allocation] = %*{
+          "orders": (if allocation == "hold": currentOrders
+            else: rebalanceOrders),
+          "payroll": payroll,
+          "split": [25, 25, 25, 25],
+          "directive": "Pool is " & $payroll &
+            "% of revenue; follow assigned lines."
+        }
   else:
     let line = observation["own"]["order"].getStr()
     actions["rest"] = %*{"line": line, "run": 0, "maint": 0,
@@ -30,7 +48,7 @@ proc chooseAction*(observation: JsonNode): JsonNode =
 
   var criteria = newJObject()
   for name, action in actions.pairs:
-    criteria[name] = %($action)
+    criteria[name] = %(name & ": " & $action)
   let sidecar = getEnv("AWS_ENDPOINT_URL_BEDROCK_RUNTIME").strip()
   let capture = getEnv("METTA_CAPTURE_URL").strip()
   var endpoint: string
@@ -58,7 +76,17 @@ proc chooseAction*(observation: JsonNode): JsonNode =
     headers["x-coworld-player-slot"] = $observation["slot"].getInt()
   let body = %*{
     "model": model,
-    "state": "You are playing Firm. Advance your own role's score. " &
+    "state": "You are playing Firm. The manager scores firm profit. " &
+      "Payroll is the share of revenue paid to workers and changes one " &
+      "shift later; higher payroll directly reduces profit but may buy " &
+      "more effort. Workers score their pay minus $1.50 per hour of effort. " &
+      "Running wears a machine by 3 condition per hour; maintenance " &
+      "restores 6. Running 6 hours and maintaining 3 is sustainable; " &
+      "running 10 without maintenance degrades future output. " &
+      "The manager's orders affect the next shift; reassigning a machine " &
+      "to a different line costs two work hours. Match line assignments " &
+      "to next-shift demand while limiting changeovers. " &
+      "Advance your own role's score. " &
       "This observation contains only your seat's information:\n" &
       $observation,
     "questions": {"decision": {
