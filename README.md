@@ -59,6 +59,8 @@ episode clock stops play between shifts.
 
 ## Layout
 
+Training exports and numeric reinforcement learning: [docs/TRAINING.md](docs/TRAINING.md).
+
 - `src/firm.nim` — entrypoint (Coworld runtime contract, live vs replay mode)
 - `src/firm/sim.nim` — pure rules: roles and the order board from the seed, the
   shift resolution, memos, hours, wear, sales, payroll, scoring, endings, replay
