@@ -223,7 +223,7 @@
     "protocols": {
       "player": {
         "type": "text",
-        "value": "firm.player.v2 - JSON text frames over COWORLD_PLAYER_WS_URL. The game sends welcome, seat-private state, and final frames. Prompt or scripted policies register with {\"type\":\"prompt\",\"prompt\":str,\"scripted\":str}. External policies register with {\"type\":\"register\",\"control\":\"external\"}. For each shift, each external seat receives {\"type\":\"observation\",\"id\":int,\"observation\":<seat-private state>} and returns {\"type\":\"action\",\"id\":int,\"action\":<manager or worker order>}. The game validates manager orders and payroll or worker line and hours, applies all shifts simultaneously, and owns visibility, rules, results, and replay. PLAYER_JEV=1 ranks orders inside the player. Without model transport it registers steady baseline play."
+        "value": "firm.player.v2 - JSON text frames over COWORLD_PLAYER_WS_URL. The game sends welcome, seat-private state, and final frames. Prompt or scripted policies register with {\"type\":\"prompt\",\"prompt\":str,\"scripted\":str}. External policies register with {\"type\":\"register\",\"control\":\"external\"}. For each shift, each external seat receives {\"type\":\"observation\",\"id\":int,\"observation\":<seat-private state>} and returns {\"type\":\"action\",\"id\":int,\"action\":<manager or worker order>}. The game validates manager orders and payroll or worker line and hours, applies all shifts simultaneously, and owns visibility, rules, results, and replay."
       },
       "global": {
         "type": "text",
@@ -321,29 +321,6 @@
         }
       },
       "source_url": "https://github.com/Metta-AI/cogame-firm/tree/main"
-    },
-    {
-      "id": "firm-jev",
-      "name": "Firm Jev Player",
-      "type": "player",
-      "description": "Ranks ordinary manager or worker orders inside the player from its own private observation.",
-      "image": "{{FIRM_IMAGE}}",
-      "run": [
-        "/bin/firm-player"
-      ],
-      "resources": {
-        "requests": {
-          "cpu": "100m",
-          "memory": "64Mi"
-        },
-        "limits": {
-          "cpu": "1"
-        }
-      },
-      "source_url": "https://github.com/Metta-AI/cogame-firm/tree/main",
-      "env": {
-        "PLAYER_JEV": "1"
-      }
     }
   ],
   "variants": [
