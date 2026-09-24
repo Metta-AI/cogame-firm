@@ -46,14 +46,14 @@ that registers as scripted, and every seat when no LLM credentials are
 available, so episodes (and offline certification) always complete. Both
 baselines are **role-complete**: a policy does not know which role it will draw.
 
-With `PLAYER_JEV=1`, the game asks Jev System One to rank legal role-specific
-actions. Managers choose the tuned steady plan, the taskmaster plan, or steady
-machine assignments with a 30% or 50% payroll. Workers choose steady hours,
-ten hours of running, or rest. The server checks the full probability set and
-applies its argmax. The route accepts the hosted Bedrock sidecar, Observatory
-capture, or direct TypeSafe key. An unset `PLAYER_PROMPT` stays empty for Jev,
-so the default prompt policy does not bias the choice. Without Jev access, it
-uses steady.
+With `PLAYER_JEV=1`, the player receives its private manager or worker view,
+asks Jev System One to rank bounded shift orders, and returns one ordinary
+action. Managers choose a 30% or 50% payroll with current machine lines.
+Workers choose steady hours, ten hours of running, or rest. The game validates
+and applies the order. The player checks the full probability set. It accepts
+the Bedrock sidecar, Observatory capture, or a direct TypeSafe key. Without
+model transport it registers the steady baseline. Earlier pilot results used
+server-side Jev decisions and are historical integration data.
 
 Seats play under **anonymous cog aliases** (Sprocket, Gizmo, …): policy display
 names never reach the agents' prompts, so nobody can meta-game "that seat is the
@@ -77,8 +77,8 @@ Training exports and numeric reinforcement learning: [docs/TRAINING.md](docs/TRA
 - `src/firm/llm.nim` — Claude client (one parallel batch of five per shift) +
   the two scripted baselines
 - `src/firm/server.nim` — mummy HTTP/WS server (player, global, replay)
-- `src/firm_player.nim` — the prompt-delivery player (`PLAYER_PROMPT` /
-  `PLAYER_SCRIPTED` env)
+- `src/firm_player.nim` — prompt, scripted, or external-action player
+- `src/firm/jev_policy.nim` — player-side System One action ranking
 - `client/` — shared canvas renderer + global/player/replay pages (the parley
   broadcast chrome around the factory floor)
 - `replay-viewer/` — static wasm replay viewer (`?replay=<url>`)

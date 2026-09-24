@@ -223,7 +223,7 @@
     "protocols": {
       "player": {
         "type": "text",
-        "value": "firm.player.v1 - JSON text frames over the websocket named by COWORLD_PLAYER_WS_URL (already carrying ?slot=N&token=T). A Firm policy is a prompt: the player container's only job is to deliver it; the game server makes every decision by sending that prompt plus the seat's role-specific view to Claude once a shift, all five seats in one parallel batch because the shift is simultaneous. game->player frames: {\"type\":\"welcome\",\"protocol\":\"firm.player.v1\",\"slot\":N,\"name\":str,\"role\":\"Manager\"|\"Worker\",\"machine\":int (0 for the manager, 1..4 for a worker),\"shifts\":int} on connect. {\"type\":\"state\",...} after every event, REDACTED to the seat's own view. Manager: {\"type\":\"state\",\"slot\":N,\"name\":str,\"role\":\"Manager\",\"board\":{\"demandA\":int,\"demandB\":int,\"nextA\":int,\"nextB\":int,\"price\":10.0,\"salvage\":2.0},\"floor\":[{\"machine\":1..4,\"name\":str,\"setup\":\"A\"|\"B\",\"order\":\"A\"|\"B\",\"units\":int,\"pay\":float,\"share\":int} x4],\"ledger\":{\"revenue\",\"pool\",\"profit\",\"revenueTotal\",\"wagesTotal\",\"profitTotal\"},\"payroll\":int,\"split\":[4 ints],\"reports\":[{\"machine\",\"name\",\"say\"}],\"directive\":str,\"notes\":str,\"shift\":int,\"shifts\":int,\"shiftsPlayed\":int,\"started\":bool,\"done\":bool,\"reason\":str} - no machine condition, no hours, no toil. Worker: {\"type\":\"state\",\"slot\":N,\"name\":str,\"role\":\"Worker\",\"machine\":1..4,\"own\":{\"setup\",\"order\",\"condition\",\"run\",\"maint\",\"units\",\"pay\",\"toil\",\"net\"},\"directive\":str,\"payroll\":int,\"split\":[4 ints],\"floor\":[{\"machine\",\"name\",\"setup\",\"order\",\"units\"} x4],\"notes\":str,\"shift\",\"shifts\",\"shiftsPlayed\",\"started\",\"done\",\"reason\"} - no demand, no prices, no firm ledger, no other machine's condition. {\"type\":\"final\",\"done\":true,\"slot\":N,\"scores\":[5],\"roles\":[5],\"names\":[5 aliases],\"pay\":[5],\"profit\":float,\"shifts\":int,\"reason\":str} at episode end, after which the player should exit. player->game frames: {\"type\":\"prompt\",\"prompt\":str,\"scripted\":str} - the prompt (max 4000 characters, cut on rune boundaries) IS the policy, sent right after connecting and again after welcome; scripted \"steady\" (or \"1\"/\"true\"/\"yes\") plays the built-in competent baseline for that seat, \"taskmaster\" the drive-it-into-the-ground baseline, \"\" means LLM-driven. The seat's own replies to the model are, for the manager, {\"orders\":[\"A\",\"B\",\"A\",\"B\"],\"payroll\":0..60,\"split\":[4 non-negative numbers renormalized to sum to 100],\"directive\":\"<=240 runes\",\"notes\":\"<=600 runes\"} and, for a worker, {\"line\":\"A\"|\"B\",\"run\":0..10,\"maint\":0..10 with run+maint<=10,\"report\":\"<=120 runes\",\"notes\":\"<=600 runes\"}. A policy is just a prompt: field one by reusing the published firm-player runnable with PLAYER_PROMPT set to your strategy. The role is dealt by the seed after seating, so a prompt must cover both roles."
+        "value": "firm.player.v2 - JSON text frames over COWORLD_PLAYER_WS_URL. The game sends welcome, seat-private state, and final frames. Prompt or scripted policies register with {\"type\":\"prompt\",\"prompt\":str,\"scripted\":str}. External policies register with {\"type\":\"register\",\"control\":\"external\"}. For each shift, each external seat receives {\"type\":\"observation\",\"id\":int,\"observation\":<seat-private state>} and returns {\"type\":\"action\",\"id\":int,\"action\":<manager or worker order>}. The game validates manager orders and payroll or worker line and hours, applies all shifts simultaneously, and owns visibility, rules, results, and replay. PLAYER_JEV=1 ranks orders inside the player. Without model transport it registers steady baseline play."
       },
       "global": {
         "type": "text",
@@ -321,6 +321,29 @@
         }
       },
       "source_url": "https://github.com/Metta-AI/cogame-firm/tree/main"
+    },
+    {
+      "id": "firm-jev",
+      "name": "Firm Jev Player",
+      "type": "player",
+      "description": "Ranks ordinary manager or worker orders inside the player from its own private observation.",
+      "image": "{{FIRM_IMAGE}}",
+      "run": [
+        "/bin/firm-player"
+      ],
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "64Mi"
+        },
+        "limits": {
+          "cpu": "1"
+        }
+      },
+      "source_url": "https://github.com/Metta-AI/cogame-firm/tree/main",
+      "env": {
+        "PLAYER_JEV": "1"
+      }
     }
   ],
   "variants": [
@@ -410,7 +433,7 @@
     },
     "players": [
       {
-        "player_id": "firm-player"
+        "player_id": "firm-jev"
       },
       {
         "player_id": "firm-steady"

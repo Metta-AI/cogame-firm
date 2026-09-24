@@ -29,10 +29,8 @@ Path(path).write_text(json.dumps({
     'player_connect_timeout_seconds': 10,
 }))
 PY
-if [ ! -x tmp/bin/firm ]; then
-  nim c --hints:off -o:tmp/bin/firm src/firm.nim
-  nim c --hints:off -o:tmp/bin/firm-player src/firm_player.nim
-fi
+nim c --hints:off -o:tmp/bin/firm src/firm.nim
+nim c --hints:off -o:tmp/bin/firm-player src/firm_player.nim
 tmp/bin/firm --host:127.0.0.1 --port:"$port" \
   --config-path:"$episode_dir/config.json" \
   --results-uri:"file://$episode_dir/results.json" \
@@ -65,7 +63,7 @@ from pathlib import Path
 path = Path(sys.argv[1])
 results = json.loads((path / 'results.json').read_text())
 replay = json.loads((path / 'episode.replay').read_text())
-log = (path / 'game.log').read_text()
+log = (path / 'player0.log').read_text()
 usage = [tuple(map(int, match)) for match in re.findall(
     r'input_tokens (\d+) output_tokens (\d+)', log)]
 print(json.dumps({
