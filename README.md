@@ -46,15 +46,8 @@ that registers as scripted, and every seat when no LLM credentials are
 available, so episodes (and offline certification) always complete. Both
 baselines are **role-complete**: a policy does not know which role it will draw.
 
-With `PLAYER_JEV=1`, the player receives its private manager or worker view,
-asks Jev System One to rank bounded shift orders, and returns one ordinary
-action. Managers choose 30%, 40%, or 50% payroll and can hold or rebalance
-machine lines against next-shift demand.
-Workers choose steady hours, ten hours of running, or rest. The game validates
-and applies the order. The player checks the full probability set. It accepts
-the Bedrock sidecar, Observatory capture, or a direct TypeSafe key. Without
-model transport it registers the steady baseline. Earlier pilot results used
-server-side Jev decisions and are historical integration data.
+External players receive private manager or worker views and return complete
+shift actions. The game validates and applies each order.
 
 Seats play under **anonymous cog aliases** (Sprocket, Gizmo, …): policy display
 names never reach the agents' prompts, so nobody can meta-game "that seat is the
@@ -79,7 +72,6 @@ Training exports and numeric reinforcement learning: [docs/TRAINING.md](docs/TRA
   the two scripted baselines
 - `src/firm/server.nim` — mummy HTTP/WS server (player, global, replay)
 - `src/firm_player.nim` — prompt, scripted, or external-action player
-- `src/firm/jev_policy.nim` — player-side System One action ranking
 - `client/` — shared canvas renderer + global/player/replay pages (the parley
   broadcast chrome around the factory floor)
 - `replay-viewer/` — static wasm replay viewer (`?replay=<url>`)
@@ -131,12 +123,10 @@ nim c -d:release -o:bin/firm src/firm.nim
 nim c -d:release -o:bin/firm-player src/firm_player.nim
 nim c --hints:off -d:emscripten replay-viewer/firm_replay.nim  # wasm viewer
 
-# Matched local episodes with five WebSocket players. Export TYPESAFE_API_KEY
-# before Jev runs. Seed 1 gives seat 0 the manager role; seed 3 gives worker.
-tools/local_episode.sh steady 1 steady
-tools/local_episode.sh jev 1 steady
-tools/local_episode.sh steady 3 taskmaster
-tools/local_episode.sh jev 3 taskmaster
+# Local scripted episodes with five WebSocket players. Seed 1 gives seat 0
+# the manager role; seed 3 gives a worker role.
+tools/local_episode.sh 1 steady
+tools/local_episode.sh 3 taskmaster
 
 # A full containerised episode (game + five players, results and replay kept):
 docker build --platform=linux/amd64 -t coworld-firm:ci .
@@ -144,25 +134,6 @@ docker build --platform=linux/amd64 -t coworld-firm:ci .
 # Export ANTHROPIC_API_KEY for real Claude play; omit it and every seat plays
 # the scripted baselines, which is the path certification takes.
 ```
-
-The corrected player-side policy completed matched native episodes against
-steady and taskmaster opponents on one game build:
-
-| Seat 0 role | Opponents | Seeds | Steady score mean | Jev score mean |
-| --- | --- | --- | ---: | ---: |
-| Manager | steady | 1, 12, 14 | 0.946 | 1.080 |
-| Manager | taskmaster | 1, 12, 14 | 0.916 | 1.042 |
-| Worker | steady | 2–5 | 1.008 | 1.008 |
-| Worker | taskmaster | 3 | 0.186 | 0.186 |
-
-All 88 Jev decisions were accepted with no scripted fallback. Jev chose
-30% payroll, rebalanced lines on six manager shifts, and chose sustainable
-work on every worker shift. The calls used 91,380 input and 5,364 output
-tokens. At [OpenRouter's Jev 1.13 list rate](https://openrouter.ai/typesafe/jev-1.13/api),
-the input costs about $0.00384; this is a price proxy, not a TypeSafe invoice.
-Eleven episodes across seven seeds are not a win-rate estimate. The action
-menu also contains a deterministic demand-aware line allocator, so these
-scores do not isolate Jev's reasoning from that policy component.
 
 Coworld packaging (from a metta checkout):
 
