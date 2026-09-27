@@ -1,4 +1,4 @@
-## Firm player: a policy is a prompt, a Jev choice policy, or scripted.
+## Firm prompt and scripted player.
 ##
 ## Connects to the game, delivers its prompt (from PLAYER_PROMPT, or a
 ## default strategy covering both roles), then idles until the final frame.
@@ -20,7 +20,6 @@
 
 import
   std/[json, options, os, strutils],
-  firm/jev_policy,
   whisky
 
 const DefaultPrompt = """
@@ -47,19 +46,12 @@ when isMainModule:
   if url.len == 0:
     quit("COWORLD_PLAYER_WS_URL is not set", 1)
   let scripted = getEnv("PLAYER_SCRIPTED").strip()
-  let jevRequested = getEnv("PLAYER_JEV") == "1"
-  let jev = jevRequested and (
-    getEnv("AWS_ENDPOINT_URL_BEDROCK_RUNTIME").strip().len > 0 or
-    getEnv("METTA_CAPTURE_URL").strip().len > 0 or
-    getEnv("TYPESAFE_API_KEY").strip().len > 0)
   var prompt = getEnv("PLAYER_PROMPT")
-  if prompt.len == 0 and not jev:
+  if prompt.len == 0:
     prompt = DefaultPrompt
 
   proc promptFrame(): string =
-    if jev: $ %*{"type": "register", "control": "external"}
-    else: $ %*{"type": "prompt", "prompt": prompt,
-      "scripted": (if jevRequested: "steady" else: scripted)}
+    $ %*{"type": "prompt", "prompt": prompt, "scripted": scripted}
 
   echo "firm player: connecting to game"
   let socket = newWebSocket(url)
@@ -90,11 +82,6 @@ when isMainModule:
           ## Re-deliver the prompt after the welcome, in case the first send
           ## raced the server's slot registration.
           socket.send(promptFrame())
-        of "observation":
-          if jev:
-            let action = chooseAction(payload["observation"])
-            socket.send($ %*{"type": "action", "id": payload["id"],
-              "action": action})
         of "final":
           echo "firm player: final scores ", payload{"scores"}
           break
