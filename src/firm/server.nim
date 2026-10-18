@@ -35,6 +35,7 @@ import
   mummy,
   mummy/routers,
   llm,
+  prompts, evidence,
   sim
 
 const
@@ -44,6 +45,8 @@ const
 type
   GameState = object
     config: GameConfig
+    selection: PromptSelection
+    tracePath: string
     sim: Sim
     prompts: seq[string]
     scripted: seq[ScriptKind]
@@ -169,6 +172,8 @@ proc finishEpisode(runtimeConfig: RuntimeConfig) =
       return
     state.finished = true
     results = state.sim.resultsJson()
+    if state.tracePath.len > 0:
+      appendPrivate(state.tracePath, %*{"event_type": "host_finished", "results": results})
     replayData = state.replayPayload(results)
 
     ## Send final frames to players BEFORE writing artifacts: the hosted
@@ -299,7 +304,7 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
       for seat in seats:
         if external[seat]:
           modelKinds[seat] = skSteady
-      var decisions = client.decideAll(simCopy, seats, prompts, modelKinds)
+      var decisions = client.decideAll(simCopy, seats, prompts, modelKinds, state.selection)
       let deadline = epochTime() + config.llmTimeoutSeconds.float
       while epochTime() < deadline:
         var ready = true
@@ -320,6 +325,8 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
             decisions[index] = simCopy.parseReply(seat, action)
 
       withLock stateLock:
+        let eventStart = state.sim.events.len
+        var fallbackUsed: array[Seats, bool]
         for index, seat in seats:
           let decision = decisions[index]
           ## Per DECISION, not per seat: a seat registered as LLM-driven whose
@@ -351,6 +358,7 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
             ## shift.
             echo "firm: reply rejected (", error.msg,
               "); using scripted fallback"
+            fallbackUsed[seat] = true
             let fallback = scriptedAction(state.sim, seat, skSteady)
             if isManager:
               state.sim.applyMemo(seat, fallback.orders, fallback.payroll,
@@ -358,6 +366,34 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
             else:
               state.sim.applyWork(seat, fallback.line, fallback.run,
                 fallback.maint, fallback.say, "", true)
+        if state.tracePath.len > 0:
+          var events = newJArray()
+          for eventIndex in eventStart ..< state.sim.events.len:
+            events.add(eventToJson(state.sim.events[eventIndex]))
+          for index, seat in seats:
+            let system = systemPrompt(simCopy, seat, state.selection)
+            let user = userPrompt(simCopy, seat, prompts[seat])
+            let proposal = simCopy.decisionJson(seat, decisions[index])
+            let executed = state.sim.installedAction(seat, eventStart)
+            let externalAction = external[seat] and not state.pendingActions[seat].isNil
+            let modelAccepted = not external[seat] and not fallbackUsed[seat] and
+              not decisions[index].scripted and proposal == executed and
+              client.selectedAttemptIds[seat].len > 0
+            let origin = if externalAction: "external"
+              elif fallbackUsed[seat] or client.attemptIds[seat].len > 0 and decisions[index].scripted: "scripted-fallback"
+              elif decisions[index].scripted: "scripted"
+              else: "model"
+            appendPrivate(state.tracePath, %*{
+              "event_type": "host_decision", "visibility": "private", "batch": decisionId,
+              "seat": seat, "turn": simCopy.shift, "observation": simCopy.playerStateJson(seat),
+              "prompt": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+              "prompt_template": state.selection.promptMetadata(system, user),
+              "proposal": proposal, "executed_action": executed, "policy_origin": origin,
+              "attempt_ids": client.attemptIds[seat],
+              "selected_attempt_id": (if modelAccepted: %client.selectedAttemptIds[seat] else: newJNull()),
+              "event_start": eventStart, "event_end": state.sim.events.len, "events": events,
+              "stored_notes": state.sim.notes[seat],
+              "terminal": state.sim.done and seat == seats[^1]})
         state.broadcastLocked()
 
       ## Pace between shifts so spectators can read the floor.
@@ -587,6 +623,12 @@ proc runGameServer*(config: GameConfig, runtimeConfig: RuntimeConfig) =
   if config.tokens.len != config.players.len:
     raise newException(FirmError, "tokens and players must align")
   state.config = config
+  state.selection = promptSelection(parseJson(runtimeConfig.config))
+  state.tracePath = getEnv("FIRM_HOST_TRACE_PATH")
+  if state.tracePath.len > 0:
+    writePrivate(state.tracePath, $(%*{"event_type": "host_started", "visibility": "private",
+      "source_revision": getEnv("FIRM_SOURCE_REVISION"), "seed": config.seed,
+      "prompt_selection": state.selection.selectionMetadata()}) & "\n")
   state.sim = initSim(config)
   state.prompts = newSeq[string](config.players.len)
   state.scripted = newSeq[ScriptKind](config.players.len)

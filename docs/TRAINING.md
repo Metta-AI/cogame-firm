@@ -1,29 +1,61 @@
 # Firm training
 
-The exporter plays ten complete native episodes per certified variant. It
-records each seat's exact hosted system and user prompts, plus replies
-accepted by the production parser. Every decision in a shift uses the
-same pre-shift state. The native simulator applies the manager memo first,
-then the four workers' choices and settlement. Train and validation sets
-split full episodes by seed.
+## Prompt variants and complete text actions
+
+Five training introductions (`canonical`, `plain`, `numbered`, `questions`,
+`reordered`) cover both manager and worker roles. `canonical` preserves the
+original messages. Shared rules, role assignment, and simulator randomness stay
+fixed. `mixed` resolves an explicit nonnegative `promptSeed % 5` once per episode.
+`heldout-briefing` and `heldout-reference` are evaluation-only.
+
+The numeric bridge accepts an optional third argument, `text`, for complete
+role-specific actions. Reset accepts `promptVariant`, `promptSeed`, and `split`;
+held-out training collection is rejected. Every seat sees the same pre-shift
+state. Manager demand and worker machine condition remain private to their roles.
+The manager's new orders and pay rule still take effect next shift.
+
+## Reviewed candidate exports
+
+Export from a clean committed checkout:
 
 ```sh
 nim c -d:release --path:src -o:/tmp/firm-posttrain tools/export_posttrain.nim
-/tmp/firm-posttrain /tmp/firm-data 10 standard
+/tmp/firm-posttrain /tmp/firm-candidates 10 1 standard canonical 0
 ```
 
-The other certified variant is `silent-floor`. The output has
-`train.jsonl`, `validation.jsonl`, and a manifest with source revision,
-seeds, shifts, scores, and row counts. Ten episodes yielded 320/80
-train/validation decisions for each variant.
+Use `silent-floor` for the second certified variant. The exporter plays complete
+eight-shift, five-seat games using the existing steady/taskmaster teacher mix.
+Private `trajectories.jsonl`, `execution.jsonl`, and `manifest.json` retain exact
+messages, hashes, source revision, proposed and installed actions, settlement
+events, and outcomes. Files use private permissions. Silent-floor suppresses
+worker reports; those proposals remain recorded but cannot become accepted labels.
+Teacher rows contain no inference request, platform call ID, or log probabilities.
 
-From a Metta checkout with the post-training package installed:
+These are candidates, not automatically admitted training data. Convert through
+Coworld's `export_complete_episodes`; Metta's independent source-hash review gate
+controls label export. Keep each `firm-SEED` family together across variants and
+wordings. Existing outputs, fewer than ten games, and held-out exports are rejected.
+No automatic train/validation files are emitted.
+
+## Native evidence and verification
+
+Optional `FIRM_HOST_TRACE_PATH`, `FIRM_ATTEMPT_TRACE_DIR`, and
+`FIRM_SOURCE_REVISION` record private native evidence. Exact request bodies,
+retry messages, raw responses, failures, parsed proposals, installed actions,
+and replay event intervals remain separate from public replay metadata.
 
 ```sh
-uv run --package metta-posttrain --extra train python -m metta_posttrain.train \
-  --dataset /tmp/firm-data --output /tmp/firm-adapter \
-  --model Qwen/Qwen3-0.6B --max-steps 100 --max-length 4096
+python3 tools/test_prompt_games.py /tmp/firm-train-bridge /tmp/original-firm-bridge
+python3 tools/test_training.py /tmp/firm-posttrain /tmp/firm-train-bridge
+python3 tools/test_native_prompts.py /tmp/firm-game /tmp/firm-player /tmp/firm-native
 ```
+
+The text panel plays 50 full games and four original numeric comparisons. The
+training workflow checks 20 source-export games and four numeric games. The
+native panel plays nine published cases with five real player processes and a
+reserved closed inference endpoint; `--smoke` runs both canonical variants.
+These checks establish execution and provenance, not successful provider inference
+or improved learning.
 
 ## Numeric reinforcement learning
 
@@ -32,8 +64,7 @@ derived from the game's redacted `playerStateJson`. The manager sees the
 market board and public floor; workers see their own machine condition
 and the public pay rule. Two choices select the published steady and
 taskmaster policies. Scores use `score / (abs(score) + 1)` for bounded
-(-1, 1) utilities. Post-training above retains arbitrary legal memos,
-work plans, and reports.
+(-1, 1) utilities. Text collection retains arbitrary legal memos, work plans, and reports.
 
 ```sh
 nim c -d:release --path:src -o:/tmp/firm-train-bridge tools/train_bridge.nim

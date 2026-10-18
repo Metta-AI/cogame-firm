@@ -140,7 +140,7 @@ jobs:
               fi
               echo "::group::nim r ${flags} --path:src ${t}"
               # shellcheck disable=SC2086
-              if ! nim r ${flags} --path:src "${t}"; then
+              if ! nim r ${flags} --path:src -o:"$RUNNER_TEMP/$(basename "${t}" .nim)-${m}" "${t}"; then
                 echo "::error::FAILED (${m}) ${t}"
                 fail=1
               fi
@@ -157,6 +157,12 @@ jobs:
             -o:/tmp/firm-train-bridge tools/train_bridge.nim
           python3 tools/test_training.py /tmp/firm-posttrain \
             /tmp/firm-train-bridge
+
+      - name: Exercise published native prompt variants
+        run: |
+          nim c --hints:off -d:release --path:src -o:"$RUNNER_TEMP/firm-game" src/firm.nim
+          nim c --hints:off -d:release --path:src -o:"$RUNNER_TEMP/firm-player" src/firm_player.nim
+          python3 tools/test_native_prompts.py "$RUNNER_TEMP/firm-game" "$RUNNER_TEMP/firm-player" "$RUNNER_TEMP/firm-native" --smoke
 
   # ---------------------------------------------------------------------
   # Packaging smoke: the production image builds, and one real episode runs
