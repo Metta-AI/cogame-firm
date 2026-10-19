@@ -52,6 +52,9 @@ def play(variant, seed, wording="canonical", prompt_seed=0, private=False):
             index, seat = observation["decision_id"], observation["seat"]
             assert index == len(trace)
             messages = observation["messages"]
+            assert ("disabled in this variant" in messages[0]["content"]) == (
+                variant == "silent-floor"
+            )
             systems.setdefault(seat, messages[0]["content"])
             assert systems[seat] == messages[0]["content"]
             view = observation["semantic_view"]

@@ -4,7 +4,8 @@
 
 Five training wordings (`canonical`, `plain`, `numbered`, `questions`,
 `reordered`) cover both manager and worker roles. `canonical` preserves the
-original messages. The v2 bank varies identity and role-specific pay/incentives.
+standard-variant messages. Silent-floor now correctly states that worker
+reports are disabled. The v2 bank varies identity and role-specific pay/incentives.
 Information boundaries, delayed manager orders, effort costs, action grammar,
 role assignment, and simulator randomness remain unchanged. `mixed` resolves an explicit nonnegative `promptSeed % 5` once per episode.
 `heldout-briefing` and `heldout-reference` are evaluation-only.
@@ -31,8 +32,8 @@ is preserved. The original three arguments remain; optional wording and prompt
 seed follow the game variant. Mixed selection cycles the five training wordings.
 
 Rows retain exact messages and wording metadata. A row is exported only when
-the proposal matches the actual installed memo or work event. Silent-floor
-suppresses worker reports, so proposals changed by that rule are excluded.
+the proposal matches the actual installed memo or work event. The shared action renderer leaves silent-floor worker reports empty, so
+teacher exports cover both roles without proposing messages that cannot be sent.
 All seats decide before any action is installed.
 
 Seed families exclude variant and wording; multiples of five enter validation.

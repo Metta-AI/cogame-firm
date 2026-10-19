@@ -29,7 +29,7 @@ if __name__ == "__main__":
                 "reordered",
             ] * 2
             assert all(
-                0 < run["decisions"] <= 40
+                run["decisions"] == 40
                 and run["shifts"] == 8
                 and len(run["scores"]) == 5
                 for run in manifest["runs"]

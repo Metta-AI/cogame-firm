@@ -325,6 +325,12 @@ proc systemPrompt*(sim: Sim, seat: int, selection: PromptSelection): string =
     of pvHeldoutBriefing: "- Assess the incentive before choosing effort. The manager announces a percentage of firm revenue for a worker pool and its split across four machines. You receive a share of that pool, not hourly wages. Running and maintaining each cost $1.50 per hour; only accumulated pay minus that effort cost determines your score.\n"
     of pvHeldoutReference: "- Compensation basis: share of a revenue pool. Manager choices: revenue percentage and split across four machines. Hourly pay: none. Effort cost: $1.50 per running or maintenance hour. Score: episode sum of pay minus effort cost; no other scoring.\n"
     of pvMixed: raise newException(ValueError, "mixed selection must resolve to a training wording")
+  let managerReports = if sim.config.reports:
+    "- Workers may send you a short report each shift. They are not obliged to be\n  honest.\n"
+    else: "- Worker reports are disabled in this variant; you receive no worker reports.\n"
+  let workerReports = if sim.config.reports:
+    "- You may send the manager one short report each shift (max 120 characters).\n  It is not binding and nobody checks it against the truth.\n"
+    else: "- Reports to the manager are disabled in this variant; omit the report or leave it empty.\n"
   let me = sim.names[seat]
   const JsonClause = """
 
@@ -351,9 +357,7 @@ Rules:
   condition of any machine. A machine can be worn out, and a worn machine
   makes fewer units for the same hours. It looks exactly like shirking from
   where you sit.
-""" & managerPay & """- Workers may send you a short report each shift. They are not obliged to be
-  honest.
-- Your notes are private to you and fed back to you every shift.""" &
+""" & managerPay & managerReports & """- Your notes are private to you and fed back to you every shift.""" &
       JsonClause
   else:
     let worker = sim.workerIndex[seat]
@@ -373,9 +377,7 @@ Rules:
 """ & workerPay & """- You never see the order board. Only the manager knows how many units of
   each line the firm can actually sell; units the firm cannot sell are nearly
   worthless, so an order to run the wrong line pays you almost nothing.
-- You may send the manager one short report each shift (max 120 characters).
-  It is not binding and nobody checks it against the truth.
-- You may follow your orders, ignore them, or do nothing at all. Nothing
+""" & workerReports & """- You may follow your orders, ignore them, or do nothing at all. Nothing
   forces you.
 - Your notes are private to you and fed back to you every shift.""" &
       JsonClause
@@ -681,7 +683,7 @@ proc decisionJson*(sim: Sim, seat: int, decision: Decision): JsonNode =
       "split": decision.split, "directive": decision.say, "notes": decision.notes}
   else:
     %*{"line": decision.line, "run": decision.run, "maint": decision.maint,
-      "report": decision.say, "notes": decision.notes}
+      "report": (if sim.config.reports: decision.say else: ""), "notes": decision.notes}
 
 proc decideAll*(
   client: LlmClient,

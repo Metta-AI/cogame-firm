@@ -132,9 +132,6 @@ proc step(command: JsonNode): JsonNode =
   if textMode:
     submitted[seat] = game.parseReply(seat, action)
     installed = game.decisionJson(seat, submitted[seat])
-    # Silent-floor suppresses worker reports at the engine boundary.
-    if not game.isManager(seat) and not game.config.reports:
-      installed["report"] = %""
   else:
     let choice = action["choice"].getInt()
     doAssert choice in 0 .. 1
