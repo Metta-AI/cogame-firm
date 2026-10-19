@@ -16,6 +16,10 @@ subprocess.run(
     [sys.executable, str(ROOT / "tools/test_export_posttrain.py"), str(EXPORTER)],
     check=True,
 )
+subprocess.run(
+    [sys.executable, str(ROOT / "tools/test_prompt_games.py"), str(BRIDGE)],
+    check=True,
+)
 for variant in ("standard", "silent-floor"):
     for teacher in (True, False):
         process = subprocess.Popen(

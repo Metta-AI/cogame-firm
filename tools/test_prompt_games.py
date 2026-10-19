@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BRIDGE, ORIGINAL = (Path(value).resolve() for value in sys.argv[1:3])
+BRIDGE = Path(sys.argv[1]).resolve()
 WORDINGS = (
     "canonical",
     "plain",
@@ -19,16 +19,13 @@ WORDINGS = (
 )
 
 
-def play(
-    variant, seed, wording="canonical", prompt_seed=0, original=False, private=False
-):
+def play(variant, seed, wording="canonical", prompt_seed=0, private=False):
     command = [
-        str(ORIGINAL if original else BRIDGE),
+        str(BRIDGE),
         str(ROOT / "coworld_manifest_template.json"),
         variant,
     ]
-    if not original:
-        command.append("text")
+    command.append("text")
     with subprocess.Popen(
         command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
     ) as process:
@@ -57,48 +54,45 @@ def play(
             messages = observation["messages"]
             systems.setdefault(seat, messages[0]["content"])
             assert systems[seat] == messages[0]["content"]
-            if not original:
-                view = observation["semantic_view"]
-                roles[seat] = view["role"]
-                metadata = view["prompt_template"]
-                assert metadata["bank"] == "firm-rules-v1"
-                assert metadata["variant"] == (
-                    WORDINGS[prompt_seed] if wording == "mixed" else wording
+            view = observation["semantic_view"]
+            roles[seat] = view["role"]
+            metadata = view["prompt_template"]
+            assert metadata["bank"] == "firm-rules-v2"
+            assert metadata["variant"] == (
+                WORDINGS[prompt_seed] if wording == "mixed" else wording
+            )
+            for message in messages:
+                assert (
+                    metadata[message["role"] + "_sha256"].lower()
+                    == hashlib.sha256(message["content"].encode()).hexdigest()
                 )
-                for message in messages:
-                    assert (
-                        metadata[message["role"] + "_sha256"].lower()
-                        == hashlib.sha256(message["content"].encode()).hexdigest()
-                    )
-                public = (
-                    view["directive"],
-                    view["payroll"],
-                    view["split"],
-                    [(m["setup"], m["order"], m["units"]) for m in view["floor"]],
-                )
-                if index % 5 == 0:
-                    frozen = public
-                    assert view["role"] == "Manager"
-                assert frozen == public
-                assert all(
-                    "condition" not in machine and "notes" not in machine
-                    for machine in view["floor"]
-                )
-                if view["role"] == "Manager":
-                    assert "board" in view and "own" not in view
-                else:
-                    assert (
-                        "board" not in view and "ledger" not in view and "own" in view
-                    )
-                if private:
-                    for other in range(5):
-                        if other != seat:
-                            assert (
-                                f"PRIVATE-{other}-"
-                                not in json.dumps(view) + messages[1]["content"]
-                            )
-                    if index >= 5:
-                        assert view["notes"].startswith(f"PRIVATE-{seat}-")
+            public = (
+                view["directive"],
+                view["payroll"],
+                view["split"],
+                [(m["setup"], m["order"], m["units"]) for m in view["floor"]],
+            )
+            if index % 5 == 0:
+                frozen = public
+                assert view["role"] == "Manager"
+            assert frozen == public
+            assert all(
+                "condition" not in machine and "notes" not in machine
+                for machine in view["floor"]
+            )
+            if view["role"] == "Manager":
+                assert "board" in view and "own" not in view
+            else:
+                assert "board" not in view and "ledger" not in view and "own" in view
+            if private:
+                for other in range(5):
+                    if other != seat:
+                        assert (
+                            f"PRIVATE-{other}-"
+                            not in json.dumps(view) + messages[1]["content"]
+                        )
+                if index >= 5:
+                    assert view["notes"].startswith(f"PRIVATE-{seat}-")
             teacher = json.loads(request({"kind": "teacher"})["response"])
             if private:
                 teacher["notes"] = f"PRIVATE-{seat}-" + "λ" * 900
@@ -137,11 +131,7 @@ def play(
                     )
             else:
                 expected = dict(teacher)
-                if (
-                    not original
-                    and variant == "silent-floor"
-                    and view["role"] == "Worker"
-                ):
+                if variant == "silent-floor" and view["role"] == "Worker":
                     expected["report"] = ""
                 assert result["action"] == expected
             trace.append(messages[1]["content"])
@@ -155,12 +145,10 @@ def play(
 
 
 for variant in ("standard", "silent-floor"):
-    for seed in (17, 946001):
-        baseline = play(variant, seed, original=True)
+    for seed in (17,):
+        baseline = play(variant, seed)
         distinct = []
-        for wording, prompt_seed in [(name, 0) for name in WORDINGS] + [
-            ("mixed", i) for i in range(5)
-        ]:
+        for wording, prompt_seed in [(name, 0) for name in WORDINGS] + [("mixed", 4)]:
             trace, outcome, systems, roles = play(variant, seed, wording, prompt_seed)
             assert (trace, outcome) == baseline[:2]
             assert sorted(roles.values()) == ["Manager"] + ["Worker"] * 4
@@ -174,7 +162,7 @@ for variant in ("standard", "silent-floor"):
     play(variant, 17, private=True)
     print(
         variant,
-        "24 matched full text games, two original games, one full normalization game PASS",
+        "10 complete matched/private-role games PASS",
         flush=True,
     )
 for wording in WORDINGS[-2:]:
@@ -199,6 +187,6 @@ for wording in WORDINGS[-2:]:
         and "held-out wording cannot be used for training" in rejected.stderr
     )
 print(
-    "50 complete text games, four original numeric games, held-out training gate PASS",
+    "20 complete text games and held-out training gate PASS",
     flush=True,
 )

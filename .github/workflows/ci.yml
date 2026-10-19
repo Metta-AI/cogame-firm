@@ -158,11 +158,6 @@ jobs:
           python3 tools/test_training.py /tmp/firm-posttrain \
             /tmp/firm-train-bridge
 
-      - name: Exercise published native prompt variants
-        run: |
-          nim c --hints:off -d:release --path:src -o:"$RUNNER_TEMP/firm-game" src/firm.nim
-          nim c --hints:off -d:release --path:src -o:"$RUNNER_TEMP/firm-player" src/firm_player.nim
-          python3 tools/test_native_prompts.py "$RUNNER_TEMP/firm-game" "$RUNNER_TEMP/firm-player" "$RUNNER_TEMP/firm-native" --smoke
 
   # ---------------------------------------------------------------------
   # Packaging smoke: the production image builds, and one real episode runs

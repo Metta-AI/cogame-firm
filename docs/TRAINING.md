@@ -2,10 +2,11 @@
 
 ## Prompt variants and complete text actions
 
-Five training introductions (`canonical`, `plain`, `numbered`, `questions`,
+Five training wordings (`canonical`, `plain`, `numbered`, `questions`,
 `reordered`) cover both manager and worker roles. `canonical` preserves the
-original messages. Shared rules, role assignment, and simulator randomness stay
-fixed. `mixed` resolves an explicit nonnegative `promptSeed % 5` once per episode.
+original messages. The v2 bank varies identity and role-specific pay/incentives.
+Information boundaries, delayed manager orders, effort costs, action grammar,
+role assignment, and simulator randomness remain unchanged. `mixed` resolves an explicit nonnegative `promptSeed % 5` once per episode.
 `heldout-briefing` and `heldout-reference` are evaluation-only.
 
 The numeric bridge accepts an optional third argument, `text`, for complete
@@ -14,48 +15,41 @@ held-out training collection is rejected. Every seat sees the same pre-shift
 state. Manager demand and worker machine condition remain private to their roles.
 The manager's new orders and pay rule still take effect next shift.
 
-## Reviewed candidate exports
+## Teacher exports
 
 Export from a clean committed checkout:
 
 ```sh
 nim c -d:release --path:src -o:/tmp/firm-posttrain tools/export_posttrain.nim
-/tmp/firm-posttrain /tmp/firm-candidates 10 1 standard canonical 0
+/tmp/firm-posttrain /tmp/firm-examples 10 standard mixed 0
 ```
 
 Use `silent-floor` for the second certified variant. The exporter plays complete
 eight-shift, five-seat games using the existing steady/taskmaster teacher mix.
-Private `trajectories.jsonl`, `execution.jsonl`, and `manifest.json` retain exact
-messages, hashes, source revision, proposed and installed actions, settlement
-events, and outcomes. Files use private permissions. Silent-floor suppresses
-worker reports; those proposals remain recorded but cannot become accepted labels.
-Teacher rows contain no inference request, platform call ID, or log probabilities.
+The original `train.jsonl`, `validation.jsonl`, and `manifest.json` format
+is preserved. The original three arguments remain; optional wording and prompt
+seed follow the game variant. Mixed selection cycles the five training wordings.
 
-These are candidates, not automatically admitted training data. Convert through
-Coworld's `export_complete_episodes`; Metta's independent source-hash review gate
-controls label export. Keep each `firm-SEED` family together across variants and
-wordings. Existing outputs, fewer than ten games, and held-out exports are rejected.
-No automatic train/validation files are emitted.
+Rows retain exact messages and wording metadata. A row is exported only when
+the proposal matches the actual installed memo or work event. Silent-floor
+suppresses worker reports, so proposals changed by that rule are excluded.
+All seats decide before any action is installed.
 
-## Native evidence and verification
+Seed families exclude variant and wording; multiples of five enter validation.
+Output directories are private. Existing paths, fewer than ten games, and
+held-out wording exports are rejected.
 
-Optional `FIRM_HOST_TRACE_PATH`, `FIRM_ATTEMPT_TRACE_DIR`, and
-`FIRM_SOURCE_REVISION` record private native evidence. Exact request bodies,
-retry messages, raw responses, failures, parsed proposals, installed actions,
-and replay event intervals remain separate from public replay metadata.
+## Verification
 
 ```sh
-python3 tools/test_prompt_games.py /tmp/firm-train-bridge /tmp/original-firm-bridge
 python3 tools/test_training.py /tmp/firm-posttrain /tmp/firm-train-bridge
-python3 tools/test_native_prompts.py /tmp/firm-game /tmp/firm-player /tmp/firm-native
 ```
 
-The text panel plays 50 full games and four original numeric comparisons. The
-training workflow checks 20 source-export games and four numeric games. The
-native panel plays nine published cases with five real player processes and a
-reserved closed inference endpoint; `--smoke` runs both canonical variants.
-These checks establish execution and provenance, not successful provider inference
-or improved learning.
+The existing workflow runs 20 mixed exports, 20 complete wording/private-role
+games, and four numeric games. It checks score and observation invariance,
+private notes, normalized actions, seed-family separation, and silent-floor
+report suppression. These checks establish mechanics and protocol behavior,
+not improved learning or resistance to policy collapse.
 
 ## Numeric reinforcement learning
 

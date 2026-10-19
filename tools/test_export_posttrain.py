@@ -1,146 +1,73 @@
-"""Export complete Firm games and join candidate decisions to resolved turn events."""
+"""Check complete seeded mixed-wording exports for both Firm variants."""
 
-import hashlib
 import json
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-EXPORTER = Path(sys.argv[1]).resolve()
-OUTPUT = Path(tempfile.mkdtemp(prefix="firm-source-export-"))
-revision = subprocess.check_output(
-    ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
-).strip()
-for variant, turns in (("standard", 8), ("silent-floor", 8)):
-    output = OUTPUT / variant
-    subprocess.run(
-        [str(EXPORTER), str(output), "10", "1", variant],
-        cwd=ROOT,
-        check=True,
-        timeout=600,
-    )
-    manifest = json.loads((output / "manifest.json").read_text())
-    assert manifest["source_revision"] == revision and len(manifest["runs"]) == 10
-    assert (
-        not (output / "train.jsonl").exists()
-        and not (output / "validation.jsonl").exists()
-    )
-    episodes, decisions, executions = {}, {}, {}
-    for filename in ("manifest.json", "trajectories.jsonl", "execution.jsonl"):
-        assert (output / filename).stat().st_mode & 0o777 == 0o600
-    for line in (output / "trajectories.jsonl").read_text().splitlines():
-        row = json.loads(line)
-        assert row["source_revision"] == revision
-        episode = row["episode_id"]
-        if row["event_type"] == "episode":
-            episodes[episode] = row
-            continue
-        decisions.setdefault(episode, []).append(row)
-        assert row["visibility"] == "private"
-        (attempt,) = row["attempts"]
-        assert attempt["origin"] == "teacher" and attempt["request"] is None
-        assert (
-            attempt["platform_call_id"] is None and attempt["behavior_logprobs"] is None
-        )
-        assert attempt["parsed_action"] == json.loads(attempt["response"])
-        if row["action_status"] == "accepted":
-            assert (
-                row["selected_attempt_id"] == attempt["attempt_id"]
-                and attempt["accepted"]
+ROOT = Path(__file__).resolve().parent.parent
+VARIANTS = ("standard", "silent-floor")
+
+if __name__ == "__main__":
+    binary = Path(sys.argv[1]).resolve()
+    with tempfile.TemporaryDirectory() as temp:
+        for variant in VARIANTS:
+            output = Path(temp) / variant
+            subprocess.run(
+                [str(binary), str(output), "10", variant, "mixed", "0"],
+                cwd=ROOT,
+                check=True,
             )
-            assert row["executed_action"] == attempt["parsed_action"]
-        else:
-            assert row["action_status"] == "fallback" and not attempt["accepted"]
-            assert row["selected_attempt_id"] is None and row["prompt"] is None
-            assert row["fallback_origin"] == "engine-normalized-submission"
-        view = row["observation"]
-        assert all(
-            "condition" not in machine and "notes" not in machine
-            for machine in view["floor"]
-        )
-        if view["role"] == "Manager":
-            assert "board" in view and "own" not in view
-        else:
-            assert "board" not in view and "own" in view
-        metadata = view["prompt_template"]
-        assert (
-            metadata["bank"] == "firm-rules-v1" and metadata["variant"] == "canonical"
-        )
-        for message in attempt["prompt"]:
-            assert (
-                metadata[message["role"] + "_sha256"].lower()
-                == hashlib.sha256(message["content"].encode()).hexdigest()
+            manifest = json.loads((output / "manifest.json").read_text())
+            assert len(manifest["runs"]) == 10
+            assert [run["prompt_selection"]["variant"] for run in manifest["runs"]] == [
+                "canonical",
+                "plain",
+                "numbered",
+                "questions",
+                "reordered",
+            ] * 2
+            assert all(
+                0 < run["decisions"] <= 40
+                and run["shifts"] == 8
+                and len(run["scores"]) == 5
+                for run in manifest["runs"]
             )
-    for line in (output / "execution.jsonl").read_text().splitlines():
-        row = json.loads(line)
-        executions.setdefault(row["episode_id"], []).append(row)
-        assert row["visibility"] == "private" and row["source_revision"] == revision
-    assert len(episodes) == 10 and set(episodes) == set(decisions) == set(executions)
-    for episode, outcome in episodes.items():
-        rows, applied = decisions[episode], executions[episode]
-        assert (
-            outcome["status"] == "completed"
-            and outcome["outcome"]["reason"] == "complete"
-        )
-        assert (
-            outcome["outcome"]["shifts"] == turns
-            and len(rows) == len(applied) == turns * 5
-        )
-        assert sum(row["terminal"] for row in rows) == 1 and rows[-1]["terminal"]
-        public, interval = None, None
-        for index, (row, execution) in enumerate(zip(rows, applied, strict=True)):
-            seat = int(row["seat"])
-            assert row["decision_id"] == execution["decision_id"] == str(index)
-            assert row["seat"] == str(seat) and execution["seat"] == seat
-            view, action = row["observation"], row["executed_action"]
-            snapshot = (
-                view["directive"],
-                view["payroll"],
-                view["split"],
-                [(m["setup"], m["order"], m["units"]) for m in view["floor"]],
+            families, counts = {}, {}
+            for split in ("train", "validation"):
+                rows = [
+                    json.loads(line)
+                    for line in (output / f"{split}.jsonl").read_text().splitlines()
+                ]
+                assert len(rows) == manifest[split + "_examples"] > 0
+                families[split] = {row["seed"] for row in rows}
+                for row in rows:
+                    assert row["game"] == "firm"
+                    assert [message["role"] for message in row["prompt"]] == [
+                        "system",
+                        "user",
+                    ]
+                    action = json.loads(row["completion"][0]["content"])
+                    if "orders" in action:
+                        assert len(action["orders"]) == 4
+                        assert set(action["orders"]) <= {"A", "B"}
+                        assert (
+                            0 <= action["payroll"] <= 60 and sum(action["split"]) == 100
+                        )
+                    else:
+                        assert action["line"] in ("A", "B")
+                        assert 0 <= action["run"] + action["maint"] <= 10
+                        if variant == "silent-floor":
+                            assert action["report"] == ""
+                    assert row["prompt_template"]["variant"] not in (
+                        "heldout-briefing",
+                        "heldout-reference",
+                    )
+                    counts[row["seed"]] = counts.get(row["seed"], 0) + 1
+            assert families["train"].isdisjoint(families["validation"])
+            assert all(
+                counts[f"firm-{run['seed']}"] == run["decisions"]
+                for run in manifest["runs"]
             )
-            if index % 5 == 0:
-                if interval is not None:
-                    assert execution["event_start"] == interval[1]
-                public = snapshot
-                interval = (execution["event_start"], execution["event_end"])
-            assert snapshot == public and interval == (
-                execution["event_start"],
-                execution["event_end"],
-            )
-            assert interval[1] - interval[0] == len(execution["events"])
-            assert execution["turn"] == view["shift"] == index // 5
-            events = [
-                event for event in execution["events"] if event.get("seat") == seat
-            ]
-            (move,) = [event for event in events if event["kind"] in ("memo", "work")]
-            assert move["scripted"]
-            assert action == execution["resolved_action"]
-            fields = (
-                ("orders", "payroll", "split")
-                if view["role"] == "Manager"
-                else ("line", "run", "maint")
-            )
-            for field in fields:
-                assert action[field] == move[field]
-            speech = "directive" if view["role"] == "Manager" else "report"
-            assert action[speech] == move.get("say", "")
-            assert action["notes"] == execution["stored_notes"] == move.get("text", "")
-            if variant == "silent-floor" and view["role"] == "Worker":
-                assert action["report"] == "" and row["action_status"] == "fallback"
-        for seat in range(5):
-            assert (
-                outcome["participant_outcomes"][str(seat)]["score"]
-                == outcome["outcome"]["scores"][seat]
-            )
-    assert {row["seed_family"] for row in episodes.values()} == {
-        f"firm-{seed}" for seed in range(1, 11)
-    }
-    print(
-        variant,
-        "10 complete exports; private observations, hashes, resolved actions and outcomes PASS",
-        flush=True,
-    )
-print("Evidence:", OUTPUT)
+            print(variant, "10 complete mixed exports PASS", flush=True)

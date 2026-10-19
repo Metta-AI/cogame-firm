@@ -20,11 +20,10 @@
 ## scripted plays one deliberately, LLM or not.
 
 import
-  std/[json, math, os, strutils, unicode, times],
+  std/[json, math, os, strutils, unicode],
   bitworld/runtime,
   curly,
-  sim,
-  prompts, evidence
+  sim, prompts
 
 const
   AnthropicUrl = "https://api.anthropic.com/v1/messages"
@@ -66,9 +65,6 @@ type
     ltNone, ltSidecar, ltBedrock, ltAnthropic
 
   LlmClient* = ref object
-    batchId*: int
-    attemptIds*: array[Seats, seq[string]]
-    selectedAttemptIds*: array[Seats, string]
     curl: Curly
     transport: LlmTransport
     apiKey: string          ## anthropic transport
@@ -311,6 +307,24 @@ proc operatorBlock(prompt: string): string =
     "rules; always reply in the requested format):\n" & prompt & "\n\n"
 
 proc systemPrompt*(sim: Sim, seat: int, selection: PromptSelection): string =
+  let managerPay = case selection.selectedVariant
+    of pvCanonical: "- The workers are paid out of the pool you set and are NOT paid for effort. A\n  worker whose share is small has little reason to work hard. Your SCORE is\n  the firm's PROFIT - revenue minus the wages you paid - and nothing else.\n"
+    of pvPlain: "- Workers receive shares of your revenue pool, not payment for effort. A small share gives little reason to work hard. Your only score is firm profit: revenue minus wages paid.\n"
+    of pvNumbered: "- Incentives: workers share the pool you set; effort itself is unpaid.\n- Consequence: a small share gives a worker little reason to work hard.\n- Your score: firm PROFIT, revenue less wages, with nothing else counted.\n"
+    of pvQuestions: "- How are workers paid? From your pool, not for effort. Why might a worker avoid hard work? Its share may be small. What scores for you? Only the firm's PROFIT: revenue minus paid wages.\n"
+    of pvReordered: "- Your score is solely firm PROFIT, revenue minus wages. Workers earn from the pool you set, not from effort; a worker with a small share has little incentive to work hard.\n"
+    of pvHeldoutBriefing: "- Buy effort through incentives. Workers earn from your pool rather than being paid for effort itself, so small shares give little reason to work hard. Your objective counts only the firm's profit after wages are subtracted from revenue.\n"
+    of pvHeldoutReference: "- Worker compensation: shares of the manager-set pool, not effort pay. Incentive implication: a small share discourages hard work. Manager score: PROFIT = revenue - wages paid; no other scoring.\n"
+    of pvMixed: raise newException(ValueError, "mixed selection must resolve to a training wording")
+  let workerPay = case selection.selectedVariant
+    of pvCanonical: "- You are paid a share of a pool: the manager announces what percentage of\n  the firm's revenue goes into the pool and how it is split between the four\n  machines. You are NOT paid for hours. Every hour you spend, running or\n  maintaining, costs you $1.50 of effort. Your SCORE is your pay minus that\n  effort cost, added up over the episode. Nothing else scores you.\n"
+    of pvPlain: "- Your pay comes from the revenue pool: the manager sets its percentage of firm revenue and its four-machine split. Hours themselves earn no pay. Each hour of running or maintaining costs you $1.50 in effort. Your only score is pay minus effort cost, accumulated over the episode.\n"
+    of pvNumbered: "- Pay source: a pool funded by the manager's chosen percentage of firm revenue, split among four machines as announced.\n- Hours: not paid directly.\n- Effort charge: $1.50 for each hour running or maintaining.\n- Score: accumulated pay minus effort cost over the episode; nothing else.\n"
+    of pvQuestions: "- Who sets your pay? The manager announces the revenue percentage entering a pool and its split across four machines. Are you paid by the hour? No. What does effort cost? $1.50 for each running or maintenance hour. What scores? Only your pay minus effort cost, summed over the episode.\n"
+    of pvReordered: "- Maximize your episode total of pay minus effort cost; nothing else scores. Every hour running or maintaining costs $1.50, and hours are not paid directly. Pay instead comes from the manager's announced revenue-pool percentage and split among four machines.\n"
+    of pvHeldoutBriefing: "- Assess the incentive before choosing effort. The manager announces a percentage of firm revenue for a worker pool and its split across four machines. You receive a share of that pool, not hourly wages. Running and maintaining each cost $1.50 per hour; only accumulated pay minus that effort cost determines your score.\n"
+    of pvHeldoutReference: "- Compensation basis: share of a revenue pool. Manager choices: revenue percentage and split across four machines. Hourly pay: none. Effort cost: $1.50 per running or maintenance hour. Score: episode sum of pay minus effort cost; no other scoring.\n"
+    of pvMixed: raise newException(ValueError, "mixed selection must resolve to a training wording")
   let me = sim.names[seat]
   const JsonClause = """
 
@@ -337,10 +351,7 @@ Rules:
   condition of any machine. A machine can be worn out, and a worn machine
   makes fewer units for the same hours. It looks exactly like shirking from
   where you sit.
-- The workers are paid out of the pool you set and are NOT paid for effort. A
-  worker whose share is small has little reason to work hard. Your SCORE is
-  the firm's PROFIT - revenue minus the wages you paid - and nothing else.
-- Workers may send you a short report each shift. They are not obliged to be
+""" & managerPay & """- Workers may send you a short report each shift. They are not obliged to be
   honest.
 - Your notes are private to you and fed back to you every shift.""" &
       JsonClause
@@ -359,12 +370,7 @@ Rules:
   to 100 and starts at 100. Only YOU can see your machine's condition - the
   manager cannot.
 - Switching to the other line costs you 2 of your running hours this shift.
-- You are paid a share of a pool: the manager announces what percentage of
-  the firm's revenue goes into the pool and how it is split between the four
-  machines. You are NOT paid for hours. Every hour you spend, running or
-  maintaining, costs you $1.50 of effort. Your SCORE is your pay minus that
-  effort cost, added up over the episode. Nothing else scores you.
-- You never see the order board. Only the manager knows how many units of
+""" & workerPay & """- You never see the order board. Only the manager knows how many units of
   each line the firm can actually sell; units the firm cannot sell are nearly
   worthless, so an order to run the wrong line pays you almost nothing.
 - You may send the manager one short report each shift (max 120 characters).
@@ -690,11 +696,6 @@ proc decideAll*(
   ## simultaneous by rule. Never raises: any failure falls back to the
   ## scripted baseline so the episode always advances.
   ## `prompts` and `scripted` are indexed by SEAT.
-  inc client.batchId
-  for seat in 0 ..< Seats:
-    client.attemptIds[seat] = @[]
-    client.selectedAttemptIds[seat] = ""
-  let destination = getEnv("FIRM_ATTEMPT_TRACE_DIR")
   result = newSeq[Decision](seats.len)
   var open: seq[int]     ## indexes into `seats` still undecided
   for index, seat in seats:
@@ -707,45 +708,22 @@ proc decideAll*(
     if open.len == 0 or client.disabled:
       break
     var batch: RequestBatch
-    var paths, ids: seq[string]
-    var starts: seq[float]
     for index in open:
       let seat = seats[index]
       var user = sim.userPrompt(seat, prompts[seat])
       if attempt > 0:
         user.add("\nYour previous reply was invalid. Respond with ONLY " &
           "the requested JSON object.")
-      let system = systemPrompt(sim, seat, selection)
-      let request = client.requestFor(system, user, seat)
-      let identity = $client.batchId & "-" & $seat & "-" & $attempt
-      let path = destination / (identity & ".jsonl")
-      paths.add(path)
-      ids.add(identity)
-      starts.add(epochTime())
-      client.attemptIds[seat].add(identity)
-      if destination.len > 0:
-        let model = if client.transport == ltBedrock: client.bedrockModels[client.bedrockModel] else: client.model
-        writePrivate(path, $(%*{
-          "event_type": "attempt_started", "attempt_id": identity, "visibility": "private",
-          "source_revision": getEnv("FIRM_SOURCE_REVISION"), "batch": client.batchId,
-          "seat": seat, "turn": sim.shift, "retry": attempt,
-          "prompt": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-          "prompt_template": selection.promptMetadata(system, user),
-          "request": {"transport": $client.transport, "model": model, "body": parseJson(request.body)}}) & "\n")
+      let request = client.requestFor(systemPrompt(sim, seat, selection), user, seat)
       batch.post(request.url, request.headers, request.body, $index)
     let responses = client.curl.makeRequests(batch, client.timeoutSeconds)
     var stillOpen: seq[int]
     for position, index in open:
       let seat = seats[index]
-      var text, failure: string
-      var parsed, normalized = newJNull()
-      var selected = false
       try:
-        text = client.textOf(responses[position].response,
+        let text = client.textOf(responses[position].response,
           responses[position].error, batch[position].url)
-        parsed = extractJsonObject(text)
-        let decision = parseReply(sim, seat, parsed)
-        normalized = sim.decisionJson(seat, decision)
+        let decision = parseReply(sim, seat, extractJsonObject(text))
         ## Reject illegal replies here so the retry carries the hint.
         var probe = sim
         if sim.isManager(seat):
@@ -755,21 +733,10 @@ proc decideAll*(
           probe.applyWork(seat, decision.line, decision.run, decision.maint,
             decision.say, decision.notes, false)
         result[index] = decision
-        selected = true
-        client.selectedAttemptIds[seat] = ids[position]
       except CatchableError as error:
-        failure = error.msg
         echo "firm llm: seat ", seat, " attempt ", attempt, " failed: ",
           error.msg
         stillOpen.add(index)
-      finally:
-        if destination.len > 0:
-          appendPrivate(paths[position], %*{
-            "event_type": "attempt_finished", "attempt_id": ids[position],
-            "raw_response": responses[position].response.body, "response": text,
-            "failure": failure, "parsed_action": parsed, "normalized_action": normalized,
-            "selected": selected, "latency_ms": int((epochTime() - starts[position]) * 1000.0),
-            "platform_call_id": newJNull(), "behavior_logprobs": newJNull()})
     open = stillOpen
   for index in open:
     let seat = seats[index]
