@@ -35,7 +35,7 @@ import
   mummy,
   mummy/routers,
   llm,
-  sim
+  sim, prompts
 
 const
   MaxPromptLen = 4000
@@ -43,6 +43,7 @@ const
 
 type
   GameState = object
+    selection: PromptSelection
     config: GameConfig
     sim: Sim
     prompts: seq[string]
@@ -299,7 +300,7 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
       for seat in seats:
         if external[seat]:
           modelKinds[seat] = skSteady
-      var decisions = client.decideAll(simCopy, seats, prompts, modelKinds)
+      var decisions = client.decideAll(simCopy, seats, prompts, modelKinds, state.selection)
       let deadline = epochTime() + config.llmTimeoutSeconds.float
       while epochTime() < deadline:
         var ready = true
@@ -586,6 +587,7 @@ proc runReplayServer*(runtimeConfig: RuntimeConfig) =
 proc runGameServer*(config: GameConfig, runtimeConfig: RuntimeConfig) =
   if config.tokens.len != config.players.len:
     raise newException(FirmError, "tokens and players must align")
+  state.selection = promptSelection(parseJson(runtimeConfig.config))
   state.config = config
   state.sim = initSim(config)
   state.prompts = newSeq[string](config.players.len)

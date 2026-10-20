@@ -1,29 +1,58 @@
 # Firm training
 
-The exporter plays ten complete native episodes per certified variant. It
-records each seat's exact hosted system and user prompts, plus replies
-accepted by the production parser. Every decision in a shift uses the
-same pre-shift state. The native simulator applies the manager memo first,
-then the four workers' choices and settlement. Train and validation sets
-split full episodes by seed.
+## Prompt variants and complete text actions
+
+Five training wordings (`canonical`, `plain`, `numbered`, `questions`,
+`reordered`) cover both manager and worker roles. `canonical` preserves the
+standard-variant messages. Silent-floor now correctly states that worker
+reports are disabled. The v2 bank varies identity and role-specific pay/incentives.
+Information boundaries, delayed manager orders, effort costs, action grammar,
+role assignment, and simulator randomness remain unchanged. `mixed` resolves an explicit nonnegative `promptSeed % 5` once per episode.
+`heldout-briefing` and `heldout-reference` are evaluation-only.
+
+The numeric bridge accepts an optional third argument, `text`, for complete
+role-specific actions. Reset accepts `promptVariant`, `promptSeed`, and `split`;
+held-out training collection is rejected. Every seat sees the same pre-shift
+state. Manager demand and worker machine condition remain private to their roles.
+The manager's new orders and pay rule still take effect next shift.
+
+## Teacher exports
+
+Export from a clean committed checkout:
 
 ```sh
 nim c -d:release --path:src -o:/tmp/firm-posttrain tools/export_posttrain.nim
-/tmp/firm-posttrain /tmp/firm-data 10 standard
+/tmp/firm-posttrain /tmp/firm-examples 10 standard mixed 0
 ```
 
-The other certified variant is `silent-floor`. The output has
-`train.jsonl`, `validation.jsonl`, and a manifest with source revision,
-seeds, shifts, scores, and row counts. Ten episodes yielded 320/80
-train/validation decisions for each variant.
+Use `silent-floor` for the second certified variant. The exporter plays complete
+eight-shift, five-seat games using the existing steady/taskmaster teacher mix.
+The original `train.jsonl`, `validation.jsonl`, and `manifest.json` format
+is preserved. The original three arguments remain; optional wording and prompt
+seed follow the game variant. Mixed selection cycles the five training wordings
+separately within each split. Episode IDs include requested selection, resolved wording, and prompt seed
+for matched collections.
 
-From a Metta checkout with the post-training package installed:
+Rows retain exact messages and wording metadata. A row is exported only when
+the proposal matches the actual installed memo or work event. The shared action renderer leaves silent-floor worker reports empty, so
+teacher exports cover both roles without proposing messages that cannot be sent.
+All seats decide before any action is installed.
+
+Seed families exclude variant and wording; multiples of five enter validation.
+Output directories are private. Existing paths, fewer than ten games, and
+held-out wording exports are rejected.
+
+## Verification
 
 ```sh
-uv run --package metta-posttrain --extra train python -m metta_posttrain.train \
-  --dataset /tmp/firm-data --output /tmp/firm-adapter \
-  --model Qwen/Qwen3-0.6B --max-steps 100 --max-length 4096
+python3 tools/test_training.py /tmp/firm-posttrain /tmp/firm-train-bridge
 ```
+
+The existing workflow runs 20 mixed exports, 20 complete wording/private-role
+games, and four numeric games. It checks score and observation invariance,
+private notes, normalized actions, seed-family separation, and silent-floor
+report suppression. These checks establish mechanics and protocol behavior,
+not improved learning or resistance to policy collapse.
 
 ## Numeric reinforcement learning
 
@@ -32,8 +61,7 @@ derived from the game's redacted `playerStateJson`. The manager sees the
 market board and public floor; workers see their own machine condition
 and the public pay rule. Two choices select the published steady and
 taskmaster policies. Scores use `score / (abs(score) + 1)` for bounded
-(-1, 1) utilities. Post-training above retains arbitrary legal memos,
-work plans, and reports.
+(-1, 1) utilities. Text collection retains arbitrary legal memos, work plans, and reports.
 
 ```sh
 nim c -d:release --path:src -o:/tmp/firm-train-bridge tools/train_bridge.nim

@@ -5,7 +5,7 @@
 ## deal it.
 
 import std/[json, monotimes, strutils, times, unicode, unittest]
-import firm/[llm, sim]
+import firm/[llm, sim, prompts]
 
 proc fixture(seed: int, shifts = 8, reports = true): GameConfig =
   result = defaultGameConfig()
@@ -175,7 +175,7 @@ suite "scripted baselines":
     var scripted = newSeq[ScriptKind](Seats)
     scripted[sim.workerSeat[1]] = skTaskmaster
     let started = getMonoTime()
-    let decisions = client.decideAll(sim, seats, prompts, scripted)
+    let decisions = client.decideAll(sim, seats, prompts, scripted, PromptSelection())
     check (getMonoTime() - started).inMilliseconds < 500
     check decisions.len == Seats
     for index, seat in seats:

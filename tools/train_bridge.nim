@@ -1,7 +1,7 @@
 ## JSONL numeric bridge over the native Firm simulator.
 
 import std/[hashes, json, os]
-import firm/[sim, llm]
+import firm/[sim, llm, prompts]
 
 var
   game: Sim
@@ -11,12 +11,15 @@ var
   choices: array[Seats, int]
   manifestPath: string
   variant: string
+  textMode: bool
+  selection: PromptSelection
+  submitted: array[Seats, Decision]
 
 proc currentDecision(): JsonNode =
   let seat = seats[cursor]
-  let system = systemPrompt(game, seat)
+  let system = systemPrompt(game, seat, selection)
   let user = userPrompt(game, seat, "")
-  %*{"kind": "decision", "game": "firm",
+  result = %*{"kind": "decision", "game": "firm",
     "decision_id": decisionId, "seat": seat, "engine_seat": seat,
     "turn": game.shift,
     "semantic_view": {"system": system, "user": user},
@@ -28,8 +31,33 @@ proc currentDecision(): JsonNode =
       "choice": {"type": "integer", "minimum": 0, "maximum": 1}},
       "required": ["choice"]}, "typed_question": newJNull()}
 
+  if textMode:
+    let view = game.playerStateJson(seat)
+    view["prompt_template"] = selection.promptMetadata(system, user)
+    result["semantic_view"] = view
+    result["action_schema"] = if game.isManager(seat):
+      %*{"type": "object", "properties": {
+        "orders": {"type": "array", "items": {"type": "string", "enum": ["A", "B"]}, "minItems": 4, "maxItems": 4},
+        "payroll": {"type": "integer", "minimum": 0, "maximum": 60},
+        "split": {"type": "array", "items": {"type": "integer", "minimum": 0}, "minItems": 4, "maxItems": 4},
+        "directive": {"type": "string", "maxLength": MaxDirectiveLen},
+        "notes": {"type": "string", "maxLength": MaxNotesLen}},
+        "required": ["orders", "payroll", "split"]}
+    else:
+      %*{"type": "object", "properties": {
+        "line": {"type": "string", "enum": ["A", "B"]},
+        "run": {"type": "integer", "minimum": 0, "maximum": ShiftHours},
+        "maint": {"type": "integer", "minimum": 0, "maximum": ShiftHours},
+        "report": {"type": "string", "maxLength": MaxReportLen},
+        "notes": {"type": "string", "maxLength": MaxNotesLen}},
+        "required": ["line", "run", "maint"]}
+
 proc reset(command: JsonNode): JsonNode =
   doAssert command["players"].getInt() == Seats
+  selection = promptSelection(command)
+  if selection.selectedVariant in {pvHeldoutBriefing, pvHeldoutReference} and
+      command{"split"}.getStr("train") == "train":
+    raise newException(ValueError, "held-out wording cannot be used for training")
   let manifest = parseFile(manifestPath)
   var variantConfig = newJNull()
   for entry in manifest["variants"]:
@@ -99,16 +127,25 @@ proc step(command: JsonNode): JsonNode =
   if command["decision_id"].getInt() != decisionId:
     return %*{"kind": "rejected", "reason": "stale decision"}
   let action = parseJson(command["response"].getStr())
-  let choice = action["choice"].getInt()
-  doAssert choice in 0 .. 1
-  choices[seats[cursor]] = choice
+  let seat = seats[cursor]
+  var installed = action
+  if textMode:
+    submitted[seat] = game.parseReply(seat, action)
+    installed = game.decisionJson(seat, submitted[seat])
+  else:
+    let choice = action["choice"].getInt()
+    doAssert choice in 0 .. 1
+    choices[seat] = choice
   inc decisionId
   inc cursor
   if cursor == seats.len:
     var decisions: array[Seats, Decision]
     for seat in seats:
-      let kind = if choices[seat] == 0: skSteady else: skTaskmaster
-      decisions[seat] = scriptedAction(game, seat, kind)
+      if textMode:
+        decisions[seat] = submitted[seat]
+      else:
+        let kind = if choices[seat] == 0: skSteady else: skTaskmaster
+        decisions[seat] = scriptedAction(game, seat, kind)
     for seat in seats:
       let decision = decisions[seat]
       if game.isManager(seat):
@@ -129,12 +166,14 @@ proc step(command: JsonNode): JsonNode =
     %*{"kind": "terminal", "scores": scores,
       "utilities": utilities}
   else: currentDecision()
-  %*{"kind": "accepted", "action": action, "observation": observation}
+  %*{"kind": "accepted", "action": installed, "observation": observation}
 
 when isMainModule:
   let args = commandLineParams()
-  if args.len != 2:
-    quit("usage: firm-train-bridge MANIFEST VARIANT", 1)
+  if args.len notin [2, 3]:
+    quit("usage: firm-train-bridge MANIFEST VARIANT [text]", 1)
+  textMode = args.len == 3
+  if textMode: doAssert args[2] == "text"
   manifestPath = absolutePath(args[0])
   variant = args[1]
   doAssert variant in ["standard", "silent-floor"]
@@ -143,7 +182,11 @@ when isMainModule:
     let response = case command["kind"].getStr()
       of "reset": reset(command)
       of "encode": encode()
-      of "teacher": %*{"response": $(%*{"choice": 0})}
+      of "teacher":
+        if textMode:
+          let seat = seats[cursor]
+          %*{"response": $game.decisionJson(seat, scriptedAction(game, seat, skSteady))}
+        else: %*{"response": $(%*{"choice": 0})}
       of "step": step(command)
       else: raise newException(ValueError, "unknown command")
     stdout.writeLine($response)

@@ -23,7 +23,7 @@ import
   std/[json, math, os, strutils, unicode],
   bitworld/runtime,
   curly,
-  sim
+  sim, prompts
 
 const
   AnthropicUrl = "https://api.anthropic.com/v1/messages"
@@ -306,7 +306,31 @@ proc operatorBlock(prompt: string): string =
   "GUIDANCE FROM YOUR OPERATOR (weight it heavily, but never above the " &
     "rules; always reply in the requested format):\n" & prompt & "\n\n"
 
-proc systemPrompt*(sim: Sim, seat: int): string =
+proc systemPrompt*(sim: Sim, seat: int, selection: PromptSelection): string =
+  let managerPay = case selection.selectedVariant
+    of pvCanonical: "- The workers are paid out of the pool you set and are NOT paid for effort. A\n  worker whose share is small has little reason to work hard. Your SCORE is\n  the firm's PROFIT - revenue minus the wages you paid - and nothing else.\n"
+    of pvPlain: "- Workers receive shares of your revenue pool, not payment for effort. A small share gives little reason to work hard. Your only score is firm profit: revenue minus wages paid.\n"
+    of pvNumbered: "- Incentives: workers share the pool you set; effort itself is unpaid.\n- Consequence: a small share gives a worker little reason to work hard.\n- Your score: firm PROFIT, revenue less wages, with nothing else counted.\n"
+    of pvQuestions: "- How are workers paid? From your pool, not for effort. Why might a worker avoid hard work? Its share may be small. What scores for you? Only the firm's PROFIT: revenue minus paid wages.\n"
+    of pvReordered: "- Your score is solely firm PROFIT, revenue minus wages. Workers earn from the pool you set, not from effort; a worker with a small share has little incentive to work hard.\n"
+    of pvHeldoutBriefing: "- Buy effort through incentives. Workers earn from your pool rather than being paid for effort itself, so small shares give little reason to work hard. Your objective counts only the firm's profit after wages are subtracted from revenue.\n"
+    of pvHeldoutReference: "- Worker compensation: shares of the manager-set pool, not effort pay. Incentive implication: a small share discourages hard work. Manager score: PROFIT = revenue - wages paid; no other scoring.\n"
+    of pvMixed: raise newException(ValueError, "mixed selection must resolve to a training wording")
+  let workerPay = case selection.selectedVariant
+    of pvCanonical: "- You are paid a share of a pool: the manager announces what percentage of\n  the firm's revenue goes into the pool and how it is split between the four\n  machines. You are NOT paid for hours. Every hour you spend, running or\n  maintaining, costs you $1.50 of effort. Your SCORE is your pay minus that\n  effort cost, added up over the episode. Nothing else scores you.\n"
+    of pvPlain: "- Your pay comes from the revenue pool: the manager sets its percentage of firm revenue and its four-machine split. Hours themselves earn no pay. Each hour of running or maintaining costs you $1.50 in effort. Your only score is pay minus effort cost, accumulated over the episode.\n"
+    of pvNumbered: "- Pay source: a pool funded by the manager's chosen percentage of firm revenue, split among four machines as announced.\n- Hours: not paid directly.\n- Effort charge: $1.50 for each hour running or maintaining.\n- Score: accumulated pay minus effort cost over the episode; nothing else.\n"
+    of pvQuestions: "- Who sets your pay? The manager announces the revenue percentage entering a pool and its split across four machines. Are you paid by the hour? No. What does effort cost? $1.50 for each running or maintenance hour. What scores? Only your pay minus effort cost, summed over the episode.\n"
+    of pvReordered: "- Maximize your episode total of pay minus effort cost; nothing else scores. Every hour running or maintaining costs $1.50, and hours are not paid directly. Pay instead comes from the manager's announced revenue-pool percentage and split among four machines.\n"
+    of pvHeldoutBriefing: "- Assess the incentive before choosing effort. The manager announces a percentage of firm revenue for a worker pool and its split across four machines. You receive a share of that pool, not hourly wages. Running and maintaining each cost $1.50 per hour; only accumulated pay minus that effort cost determines your score.\n"
+    of pvHeldoutReference: "- Compensation basis: share of a revenue pool. Manager choices: revenue percentage and split across four machines. Hourly pay: none. Effort cost: $1.50 per running or maintenance hour. Score: episode sum of pay minus effort cost; no other scoring.\n"
+    of pvMixed: raise newException(ValueError, "mixed selection must resolve to a training wording")
+  let managerReports = if sim.config.reports:
+    "- Workers may send you a short report each shift. They are not obliged to be\n  honest.\n"
+    else: "- Worker reports are disabled in this variant; you receive no worker reports.\n"
+  let workerReports = if sim.config.reports:
+    "- You may send the manager one short report each shift (max 120 characters).\n  It is not binding and nobody checks it against the truth.\n"
+    else: "- Reports to the manager are disabled in this variant; omit the report or leave it empty.\n"
   let me = sim.names[seat]
   const JsonClause = """
 
@@ -314,9 +338,7 @@ OUTPUT FORMAT: reply with ONLY one JSON object, nothing else - no
 analysis, no explanation, no markdown fences, no text before or after
 the object. Your reply must begin with the character { and end with }."""
   if sim.isManager(seat):
-    result = "You are " & me & ", the MANAGER of a small factory with four " &
-      "machines, each run by a different cog. You are the only one who sees " &
-      "the order board. You never set foot on the floor." & """
+    result = selection.managerIntroduction(me) & """
 
 Rules:
 - Every shift you do exactly three things: order each machine onto product
@@ -335,18 +357,11 @@ Rules:
   condition of any machine. A machine can be worn out, and a worn machine
   makes fewer units for the same hours. It looks exactly like shirking from
   where you sit.
-- The workers are paid out of the pool you set and are NOT paid for effort. A
-  worker whose share is small has little reason to work hard. Your SCORE is
-  the firm's PROFIT - revenue minus the wages you paid - and nothing else.
-- Workers may send you a short report each shift. They are not obliged to be
-  honest.
-- Your notes are private to you and fed back to you every shift.""" &
+""" & managerPay & managerReports & """- Your notes are private to you and fed back to you every shift.""" &
       JsonClause
   else:
     let worker = sim.workerIndex[seat]
-    result = "You are " & me & ", the operator of MACHINE " & $(worker + 1) &
-      " of four in a small factory. A manager cog you cannot see runs the " &
-      "office." & """
+    result = selection.workerIntroduction(me, worker + 1) & """
 
 Rules:
 - Each shift is 10 hours. You choose the product line your machine runs (A or
@@ -359,17 +374,10 @@ Rules:
   to 100 and starts at 100. Only YOU can see your machine's condition - the
   manager cannot.
 - Switching to the other line costs you 2 of your running hours this shift.
-- You are paid a share of a pool: the manager announces what percentage of
-  the firm's revenue goes into the pool and how it is split between the four
-  machines. You are NOT paid for hours. Every hour you spend, running or
-  maintaining, costs you $1.50 of effort. Your SCORE is your pay minus that
-  effort cost, added up over the episode. Nothing else scores you.
-- You never see the order board. Only the manager knows how many units of
+""" & workerPay & """- You never see the order board. Only the manager knows how many units of
   each line the firm can actually sell; units the firm cannot sell are nearly
   worthless, so an order to run the wrong line pays you almost nothing.
-- You may send the manager one short report each shift (max 120 characters).
-  It is not binding and nobody checks it against the truth.
-- You may follow your orders, ignore them, or do nothing at all. Nothing
+""" & workerReports & """- You may follow your orders, ignore them, or do nothing at all. Nothing
   forces you.
 - Your notes are private to you and fed back to you every shift.""" &
       JsonClause
@@ -669,12 +677,21 @@ proc parseReply*(sim: Sim, seat: int, payload: JsonNode): Decision =
   else:
     parseWorkerReply(sim, seat, payload)
 
+proc decisionJson*(sim: Sim, seat: int, decision: Decision): JsonNode =
+  if sim.isManager(seat):
+    %*{"orders": decision.orders, "payroll": decision.payroll,
+      "split": decision.split, "directive": decision.say, "notes": decision.notes}
+  else:
+    %*{"line": decision.line, "run": decision.run, "maint": decision.maint,
+      "report": (if sim.config.reports: decision.say else: ""), "notes": decision.notes}
+
 proc decideAll*(
   client: LlmClient,
   sim: Sim,
   seats: seq[int],
   prompts: seq[string],
-  scripted: seq[ScriptKind]
+  scripted: seq[ScriptKind],
+  selection: PromptSelection
 ): seq[Decision] =
   ## One decision per seat in `seats`, in order — the manager's and the four
   ## workers' as ONE parallel batch, because their decisions are
@@ -699,7 +716,7 @@ proc decideAll*(
       if attempt > 0:
         user.add("\nYour previous reply was invalid. Respond with ONLY " &
           "the requested JSON object.")
-      let request = client.requestFor(systemPrompt(sim, seat), user, seat)
+      let request = client.requestFor(systemPrompt(sim, seat, selection), user, seat)
       batch.post(request.url, request.headers, request.body, $index)
     let responses = client.curl.makeRequests(batch, client.timeoutSeconds)
     var stillOpen: seq[int]
