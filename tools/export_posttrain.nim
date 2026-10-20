@@ -66,7 +66,8 @@ when isMainModule:
         let system = systemPrompt(game, seat, wording)
         let user = userPrompt(game, seat, "")
         records[seat] = $(%*{
-          "episode_id": "firm-" & variant & "-" & $seed & "-" & $wording.selectedVariant,
+          "episode_id": "firm-" & variant & "-" & $seed & "-" & $wording.variant & "-" &
+            $wording.selectedVariant & "-" & $wording.seed,
           "seed": "firm-" & $seed,
           "decision_id": game.shift * Seats + seat,
           "prompt": [
