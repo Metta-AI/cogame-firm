@@ -33,9 +33,13 @@ when isMainModule:
     trainRows: seq[string]
     validationRows: seq[string]
     runs = newJArray()
+    wordingCounts: array[2, int]
   for seed in 1 .. episodes:
     var wording = selection
-    if wording.variant == pvMixed: wording.seed += seed - 1
+    let partition = ord(seed mod 5 == 0)
+    if wording.variant == pvMixed:
+      wording.seed += wordingCounts[partition]
+    inc wordingCounts[partition]
     variantConfig["seed"] = %seed
     var config = defaultGameConfig()
     config.update($variantConfig)
@@ -62,7 +66,7 @@ when isMainModule:
         let system = systemPrompt(game, seat, wording)
         let user = userPrompt(game, seat, "")
         records[seat] = $(%*{
-          "episode_id": "firm-" & variant & "-" & $seed,
+          "episode_id": "firm-" & variant & "-" & $seed & "-" & $wording.selectedVariant,
           "seed": "firm-" & $seed,
           "decision_id": game.shift * Seats + seat,
           "prompt": [

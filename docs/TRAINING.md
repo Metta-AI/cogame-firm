@@ -29,7 +29,8 @@ Use `silent-floor` for the second certified variant. The exporter plays complete
 eight-shift, five-seat games using the existing steady/taskmaster teacher mix.
 The original `train.jsonl`, `validation.jsonl`, and `manifest.json` format
 is preserved. The original three arguments remain; optional wording and prompt
-seed follow the game variant. Mixed selection cycles the five training wordings.
+seed follow the game variant. Mixed selection cycles the five training wordings
+separately within each split. Episode IDs include wording for matched collections.
 
 Rows retain exact messages and wording metadata. A row is exported only when
 the proposal matches the actual installed memo or work event. The shared action renderer leaves silent-floor worker reports empty, so
