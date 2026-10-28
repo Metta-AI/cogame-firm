@@ -35,7 +35,7 @@ import
   mummy,
   mummy/routers,
   llm,
-  sim, prompts
+  sim, prompts, native_capture
 
 const
   MaxPromptLen = 4000
@@ -46,6 +46,7 @@ type
     selection: PromptSelection
     config: GameConfig
     sim: Sim
+    capture: RuntimeCapture
     prompts: seq[string]
     scripted: seq[ScriptKind]
     external: seq[bool]
@@ -196,6 +197,7 @@ proc finishEpisode(runtimeConfig: RuntimeConfig) =
       socket.send($final)
     state.broadcastLocked()
 
+  state.capture.finishCapture(results)
   sleep(500)
   echo "firm: writing results and replay"
   writeArtifact(
@@ -300,7 +302,12 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
       for seat in seats:
         if external[seat]:
           modelKinds[seat] = skSteady
-      var decisions = client.decideAll(simCopy, seats, prompts, modelKinds, state.selection)
+      var captures: seq[CapturedDecision]
+      for seat in seats:
+        captures.add(state.capture.beginDecision("shift-" & $simCopy.shift & "-seat-" & $seat,
+          config.players[seat].name, simCopy.playerStateJson(seat),
+          state.selection.selectionMetadata(), simCopy.nativeStateHash()))
+      var decisions = client.decideAll(simCopy, seats, prompts, modelKinds, state.selection, captures)
       let deadline = epochTime() + config.llmTimeoutSeconds.float
       while epochTime() < deadline:
         var ready = true
@@ -322,7 +329,12 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
 
       withLock stateLock:
         for index, seat in seats:
-          let decision = decisions[index]
+          var decision = decisions[index]
+          let startEvent = state.sim.events.len
+          var origin = if external[seat]:
+              (if decision.scripted: "fallback" else: "external")
+            elif scripted[seat] != skNone: "scripted"
+            elif decision.scripted: "fallback" else: "model"
           ## Per DECISION, not per seat: a seat registered as LLM-driven whose
           ## reply failed twice fell back to the baseline, and the replay is
           ## where phase 60 counts those.
@@ -353,12 +365,16 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
             echo "firm: reply rejected (", error.msg,
               "); using scripted fallback"
             let fallback = scriptedAction(state.sim, seat, skSteady)
+            decision = fallback
+            origin = "fallback"
             if isManager:
               state.sim.applyMemo(seat, fallback.orders, fallback.payroll,
                 fallback.split, fallback.say, "", true)
             else:
               state.sim.applyWork(seat, fallback.line, fallback.run,
                 fallback.maint, fallback.say, "", true)
+          state.capture.applied(captures[index], seat,
+            simCopy.decisionJson(seat, decision), state.sim, startEvent, origin)
         state.broadcastLocked()
 
       ## Pace between shifts so spectators can read the floor.
@@ -590,6 +606,7 @@ proc runGameServer*(config: GameConfig, runtimeConfig: RuntimeConfig) =
   state.selection = promptSelection(parseJson(runtimeConfig.config))
   state.config = config
   state.sim = initSim(config)
+  state.capture = newRuntimeCapture(state.sim, runtimeConfig.resultsUri, runtimeConfig.replayUri)
   state.prompts = newSeq[string](config.players.len)
   state.scripted = newSeq[ScriptKind](config.players.len)
   state.external = newSeq[bool](config.players.len)

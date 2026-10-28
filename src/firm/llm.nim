@@ -20,10 +20,10 @@
 ## scripted plays one deliberately, LLM or not.
 
 import
-  std/[json, math, os, strutils, unicode],
+  std/[json, math, os, strutils, times, unicode],
   bitworld/runtime,
   curly,
-  sim, prompts
+  sim, prompts, native_capture
 
 const
   AnthropicUrl = "https://api.anthropic.com/v1/messages"
@@ -691,13 +691,16 @@ proc decideAll*(
   seats: seq[int],
   prompts: seq[string],
   scripted: seq[ScriptKind],
-  selection: PromptSelection
+  selection: PromptSelection,
+  captures: seq[CapturedDecision] = @[]
 ): seq[Decision] =
   ## One decision per seat in `seats`, in order — the manager's and the four
   ## workers' as ONE parallel batch, because their decisions are
   ## simultaneous by rule. Never raises: any failure falls back to the
   ## scripted baseline so the episode always advances.
   ## `prompts` and `scripted` are indexed by SEAT.
+  template evidence(index: int): CapturedDecision =
+    (if index < captures.len: captures[index] else: nil)
   result = newSeq[Decision](seats.len)
   var open: seq[int]     ## indexes into `seats` still undecided
   for index, seat in seats:
@@ -717,14 +720,23 @@ proc decideAll*(
         user.add("\nYour previous reply was invalid. Respond with ONLY " &
           "the requested JSON object.")
       let request = client.requestFor(systemPrompt(sim, seat, selection), user, seat)
+      evidence(index).beginAttempt()
+      evidence(index).requested(request.body, request.headers)
       batch.post(request.url, request.headers, request.body, $index)
+    let batchStarted = epochTime()
     let responses = client.curl.makeRequests(batch, client.timeoutSeconds)
     var stillOpen: seq[int]
     for position, index in open:
       let seat = seats[index]
       try:
+        let elapsedMs = int((epochTime() - batchStarted) * 1000)
+        if responses[position].error.len == 0:
+          evidence(index).received(responses[position].response, elapsedMs)
+        else:
+          evidence(index).transportFailed(responses[position].error, elapsedMs)
         let text = client.textOf(responses[position].response,
           responses[position].error, batch[position].url)
+        evidence(index).replyText(text)
         let decision = parseReply(sim, seat, extractJsonObject(text))
         ## Reject illegal replies here so the retry carries the hint.
         var probe = sim
@@ -734,10 +746,12 @@ proc decideAll*(
         else:
           probe.applyWork(seat, decision.line, decision.run, decision.maint,
             decision.say, decision.notes, false)
+        evidence(index).parsedProposal(sim.decisionJson(seat, decision))
         result[index] = decision
       except CatchableError as error:
         echo "firm llm: seat ", seat, " attempt ", attempt, " failed: ",
           error.msg
+        evidence(index).rejectedAttempt(error.msg)
         stillOpen.add(index)
     open = stillOpen
   for index in open:

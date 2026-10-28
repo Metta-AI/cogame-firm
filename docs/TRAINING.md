@@ -78,3 +78,81 @@ evaluation. Native PufferLib trained 4,096 CUDA timesteps per variant in
 Slurm job 9092, then reloaded checkpoints for held-out seeds 101 and 102.
 Both variants scored 1.032 and 0.969 on those seeds. These bounded runs
 verify execution, not stronger league play.
+
+## Optional native private evidence
+
+`COGAME_SAVE_TRAJECTORY_URI` enables the common private decision JSONL from the
+ordinary server. Supply `COWORLD_EPISODE_ID`, `COWORLD_GAME_VERSION`, and
+`COWORLD_SOURCE_REVISION`; `COWORLD_GAME_IMAGE_DIGEST`, when present, must be an
+immutable SHA-256 digest. The private destination must differ from public results
+and replay. Capture failures do not change native actions or public artifacts.
+
+The server freezes all five role-private views before requesting any orders. It
+records the exact exposed request/entity response bytes (base64), allowlisted
+receipt/request headers, settled attempts, actual applied commands, and native
+state/event witnesses. Curly discards partial body/header data on transport
+errors and may decompress responses: compressed wire bytes are unavailable.
+Empty notes/directives remain KEEP commands, distinct from retained notebook or
+memo text. Public spectator/replay notebook visibility is unchanged; private
+per-seat execution metadata removes foreign notebook event text.
+
+Strict target selection requires unique valid receipt identities, complete
+responses, strict scalar JSON without duplicate keys, and supplied field types
+and values identical to the installed command. Required fields are manager
+orders/payroll or worker line/run. Omitted split defaults to equal shares,
+omitted maintenance to zero, and omitted text to the empty KEEP/report command;
+explicit nulls are excluded. Silent-floor nonempty reports are excluded even
+though native application suppresses them. Normalized native commands remain
+recorded as actually applied, without being relabeled as teacher targets.
+Invalid scalar evidence is quarantined as original serialized bytes in base64,
+with no selected attempt/action and a failed private episode. The gameplay
+parser, prompts, clocks and rules are unchanged.
+
+Native `seed_family` now hashes the actual initialized roles, machines, complete
+24-shift demand schedule and active physical rules; requested horizon and report
+channel are a separate causal condition. Alias/policy/wording/seed labels cannot
+create new worlds. Seeds 9 and 20 share a physical root despite the legacy `%5`
+partition. Preserve legacy exports, but regroup their actual initial content
+before mixing them with the new schema. Different roots alone do not establish
+scientific independence or teacher quality. Local fixture receipts are synthetic
+and authorize no model-teacher training.
+
+`tools/test_native_capture.py` runs a complete ordinary loopback HTTP/WS system
+fixture against supplied game/player binaries, retaining bounded resource and
+health/Pong measurements. `tools/check_native_capture.nim` reconstructs its
+private views, prompts, exact HTTP joins, commands and complete native replay.
+These checks establish execution and capture, not policy learning.
+
+Receipt uniqueness covers every received attempt, including HTTP errors and
+parser failures. Only syntactically valid 36-character UUIDs enter the private
+registry. Reusing one marks the entire private episode failed, so earlier
+accepted historical rows cannot enter a complete-episode export. Invalid or
+ambiguous IDs remain ineligible; missing transport evidence is never invented.
+
+Scalar validation covers raw response entity bytes, recursively decoded response
+envelopes, and decoded completion text, including ignored fields or prefixes
+outside the extracted action. Unsafe evidence forces forensic exclusion and a
+failed private episode even when native gameplay accepts the extracted command.
+Original available bytes and their provenance remain base64/hash witnesses;
+public actions and replay do not change. Valid accents and surrogate pairs stay
+eligible. The existing private-upload timeout is 60 seconds; it fits the nominal
+1200-second episode reserve but does not establish hard process preemption.
+
+The checker retains its completed-positive mode unchanged. Its separate
+`--failed-cohort` mode takes the usual five paths followed by a frozen fixture
+plan: config, private trajectory, replay, observed HTTP, operator prompt, plan.
+It reconstructs the full ordinary eight-shift failed fixture, including the
+failed-first/reused-receipt retry, three scalar forensic rows, positive controls,
+and all 41 original attempts. Typed SDK whole-file validation and zero complete
+units are a separate required check; a failed private cohort is never promoted
+because public gameplay completed.
+
+Frozen residual QA plans use the same harness with `--fixture-plan FIXTURE.json`.
+Its `--verify-profile` mode reads retained evidence without starting a game;
+`--pair-with CONTROL` compares the silent-floor capture-off control. The native
+checker's `--profile` mode takes the usual five paths and that fixture plan.
+Plans freeze response bytes and the native request generator; actual future
+request bytes are recorded before assertions and checked against native views.
+The mixed-control private 503 sink retains an offered completed payload for
+forensics; a locally readable SDK unit is not successful publication or teacher
+admission. Actual notebook scalar poisoning remains a separate untested risk.
