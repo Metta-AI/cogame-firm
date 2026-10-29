@@ -96,10 +96,37 @@ proc machineLabel*(worker: int): string =
   ## Machines are numbered 1..4 for humans; a spectator reads MACHINE 3.
   "Machine " & $(worker + 1)
 
+proc scalarUtf8*(text: string): bool =
+  ## RFC 3629: Nim's validateUtf8 alone permits encoded surrogate code points.
+  var index = 0
+  while index < text.len:
+    let first = ord(text[index])
+    var size = 1
+    if first <= 0x7f: discard
+    elif first in 0xc2 .. 0xdf: size = 2
+    elif first in 0xe0 .. 0xef: size = 3
+    elif first in 0xf0 .. 0xf4: size = 4
+    else: return false
+    if index + size > text.len: return false
+    for offset in 1 ..< size:
+      if ord(text[index + offset]) notin 0x80 .. 0xbf: return false
+    if size >= 3:
+      let second = ord(text[index + 1])
+      if first == 0xe0 and second < 0xa0 or first == 0xed and second > 0x9f or
+          first == 0xf0 and second < 0x90 or first == 0xf4 and second > 0x8f:
+        return false
+    index += size
+  true
+
+proc requireScalarText*(text: string) =
+  if not scalarUtf8(text):
+    raise newException(FirmError, "native text must be Unicode scalar UTF-8")
+
 proc trimText*(text: string, limit: int): string =
   ## Strip, collapse newlines, and cut on a RUNE boundary: a byte slice
   ## through a multi-byte character would leave invalid UTF-8 in the replay
   ## and break its JSON.
+  requireScalarText(text)
   result = text.strip().replace("\r", " ").replace("\n", " ")
   if result.runeLen > limit:
     result = result.runeSubStr(0, limit)
@@ -428,6 +455,9 @@ proc applyMemo*(sim: var Sim, seat: int, orders: seq[string], payroll: int,
     if share < 0:
       raise newException(FirmError, "a share cannot be negative: " & $share)
     shares.add(share.float)
+  # Validate and clip all text before any pending-state or event mutation.
+  let memo = trimText(directive, MaxDirectiveLen)
+  let notebook = trimText(notes, MaxNotesLen)
   for worker in 0 ..< Machines:
     let line = normalizeLine(orders[worker])
     if line.len == 0:
@@ -442,11 +472,10 @@ proc applyMemo*(sim: var Sim, seat: int, orders: seq[string], payroll: int,
       [split[0], split[1], split[2], split[3]]
     else:
       normalizeSplit(shares)
-  let memo = trimText(directive, MaxDirectiveLen)
   if memo.len > 0:
     sim.directive = memo
   if notes.len > 0:
-    sim.notes[seat] = trimText(notes, MaxNotesLen)
+    sim.notes[seat] = notebook
   sim.memoDone = true
   sim.scriptedSeat[seat] = scripted
   var event = blankEvent(evMemo)
@@ -488,7 +517,9 @@ proc applyWork*(sim: var Sim, seat: int, line: string, run, maint: int,
   if run + maint > ShiftHours:
     raise newException(FirmError,
       "a shift is " & $ShiftHours & " hours: " & $run & " + " & $maint)
+  # Reject unsafe report/notebook text before choosing hours or recording state.
   var message = trimText(report, MaxReportLen)
+  let notebook = trimText(notes, MaxNotesLen)
   if not sim.config.reports:
     message = ""
   sim.lines[worker] = chosen
@@ -496,7 +527,7 @@ proc applyWork*(sim: var Sim, seat: int, line: string, run, maint: int,
   sim.maints[worker] = maint
   sim.reports[worker] = message
   if notes.len > 0:
-    sim.notes[seat] = trimText(notes, MaxNotesLen)
+    sim.notes[seat] = notebook
   sim.scriptedSeat[seat] = scripted
   var event = blankEvent(evWork)
   event.shift = sim.shift

@@ -35,7 +35,7 @@ import
   mummy,
   mummy/routers,
   llm,
-  sim, prompts
+  sim, prompts, native_capture
 
 const
   MaxPromptLen = 4000
@@ -46,9 +46,11 @@ type
     selection: PromptSelection
     config: GameConfig
     sim: Sim
+    capture: RuntimeCapture
     prompts: seq[string]
     scripted: seq[ScriptKind]
     external: seq[bool]
+    policyReady: seq[bool]
     decisionId: int
     pendingActions: seq[JsonNode]
     playerSockets: Table[int, WebSocket]
@@ -196,6 +198,7 @@ proc finishEpisode(runtimeConfig: RuntimeConfig) =
       socket.send($final)
     state.broadcastLocked()
 
+  state.capture.finishCapture(results)
   sleep(500)
   echo "firm: writing results and replay"
   writeArtifact(
@@ -217,10 +220,11 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
     let deadline = gameStart + config.playerConnectTimeoutSeconds
 
     while epochTime() < deadline:
-      var allConnected = false
+      var allReady = true
       withLock stateLock:
-        allConnected = state.playerSockets.len >= config.tokens.len
-      if allConnected:
+        for ready in state.policyReady:
+          if not ready: allReady = false
+      if allReady:
         break
       sleep(200)
 
@@ -258,6 +262,7 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
       var prompts: seq[string]
       var scripted: seq[ScriptKind]
       var external: seq[bool]
+      var policyReady: seq[bool]
       var decisionId: int
       withLock stateLock:
         if state.sim.done:
@@ -278,6 +283,7 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
         prompts = state.prompts
         scripted = state.scripted
         external = state.external
+        policyReady = state.policyReady
         inc state.decisionId
         decisionId = state.decisionId
         state.pendingActions = newSeq[JsonNode](config.players.len)
@@ -298,9 +304,18 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
       for seat in 0 ..< scripted.len:
         modelKinds[seat] = scripted[seat]
       for seat in seats:
-        if external[seat]:
+        if external[seat] or not policyReady[seat]:
           modelKinds[seat] = skSteady
-      var decisions = client.decideAll(simCopy, seats, prompts, modelKinds, state.selection)
+      var captures: seq[CapturedDecision]
+      for seat in seats:
+        var observation = simCopy.playerStateJson(seat)
+        observation["policy_registered"] = %policyReady[seat]
+        if not policyReady[seat]:
+          observation["fallback_reason"] = %"unregistered_policy"
+        captures.add(state.capture.beginDecision("shift-" & $simCopy.shift & "-seat-" & $seat,
+          config.players[seat].name, observation,
+          state.selection.selectionMetadata(), simCopy.nativeStateHash()))
+      var decisions = client.decideAll(simCopy, seats, prompts, modelKinds, state.selection, captures)
       let deadline = epochTime() + config.llmTimeoutSeconds.float
       while epochTime() < deadline:
         var ready = true
@@ -322,7 +337,13 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
 
       withLock stateLock:
         for index, seat in seats:
-          let decision = decisions[index]
+          var decision = decisions[index]
+          let startEvent = state.sim.events.len
+          var origin = if not policyReady[seat]: "fallback"
+            elif external[seat]:
+              (if decision.scripted: "fallback" else: "external")
+            elif scripted[seat] != skNone: "scripted"
+            elif decision.scripted: "fallback" else: "model"
           ## Per DECISION, not per seat: a seat registered as LLM-driven whose
           ## reply failed twice fell back to the baseline, and the replay is
           ## where phase 60 counts those.
@@ -353,12 +374,16 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
             echo "firm: reply rejected (", error.msg,
               "); using scripted fallback"
             let fallback = scriptedAction(state.sim, seat, skSteady)
+            decision = fallback
+            origin = "fallback"
             if isManager:
               state.sim.applyMemo(seat, fallback.orders, fallback.payroll,
                 fallback.split, fallback.say, "", true)
             else:
               state.sim.applyWork(seat, fallback.line, fallback.run,
                 fallback.maint, fallback.say, "", true)
+          state.capture.applied(captures[index], seat,
+            simCopy.decisionJson(seat, decision), state.sim, startEvent, origin)
         state.broadcastLocked()
 
       ## Pace between shifts so spectators can read the floor.
@@ -481,6 +506,8 @@ proc websocketHandler(
       var slot = -1
       withLock stateLock:
         slot = state.socketSlots.getOrDefault(websocket, -1)
+        if slot >= 0 and state.playerSockets.getOrDefault(slot) != websocket:
+          slot = -1
       if slot < 0:
         return
       try:
@@ -489,10 +516,15 @@ proc websocketHandler(
           if payload["control"].getStr() != "external":
             raise newException(FirmError, "unknown player control")
           withLock stateLock:
+            if state.playerSockets.getOrDefault(slot) != websocket:
+              return
             state.external[slot] = true
+            state.policyReady[slot] = true
           return
         if payload{"type"}.getStr() == "action":
           withLock stateLock:
+            if state.playerSockets.getOrDefault(slot) != websocket:
+              return
             if state.external[slot] and payload["id"].getInt() ==
                 state.decisionId and state.pendingActions[slot].isNil:
               let action = payload["action"]
@@ -507,18 +539,30 @@ proc websocketHandler(
               state.pendingActions[slot] = action
           return
         if payload{"type"}.getStr() == "prompt":
-          var prompt = payload{"prompt"}.getStr()
+          if not payload.hasKey("prompt") or payload["prompt"].kind != JString:
+            raise newException(FirmError, "prompt must be a string")
+          var prompt = payload["prompt"].getStr()
           if prompt.runeLen > MaxPromptLen:
             prompt = prompt.runeSubStr(0, MaxPromptLen)
           let node = payload{"scripted"}
-          let scripted =
-            if node.isNil: skNone
-            elif node.kind == JBool: (if node.getBool(): skSteady else: skNone)
-            else: parseScriptKind(node.getStr())
+          var scripted = skNone
+          if not node.isNil:
+            if node.kind == JBool:
+              scripted = (if node.getBool(): skSteady else: skNone)
+            elif node.kind == JString:
+              scripted = parseScriptKind(node.getStr())
+              if scripted == skNone and node.getStr().strip().toLowerAscii() notin
+                  ["", "none", "0", "false", "no"]:
+                raise newException(FirmError, "unknown scripted policy")
+            else:
+              raise newException(FirmError, "scripted must be a string or boolean")
           withLock stateLock:
+            if state.playerSockets.getOrDefault(slot) != websocket:
+              return
             state.prompts[slot] = prompt
             state.scripted[slot] = scripted
             state.external[slot] = false
+            state.policyReady[slot] = true
           echo "firm: slot ", slot, " delivered a prompt (", prompt.len,
             " chars",
             (if scripted != skNone: ", scripted " & $scripted else: ""), ")"
@@ -590,9 +634,11 @@ proc runGameServer*(config: GameConfig, runtimeConfig: RuntimeConfig) =
   state.selection = promptSelection(parseJson(runtimeConfig.config))
   state.config = config
   state.sim = initSim(config)
+  state.capture = newRuntimeCapture(state.sim, runtimeConfig.resultsUri, runtimeConfig.replayUri)
   state.prompts = newSeq[string](config.players.len)
   state.scripted = newSeq[ScriptKind](config.players.len)
   state.external = newSeq[bool](config.players.len)
+  state.policyReady = newSeq[bool](config.players.len)
   state.pendingActions = newSeq[JsonNode](config.players.len)
   runtimeConfigGlobal = runtimeConfig
 

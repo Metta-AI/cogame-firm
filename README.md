@@ -26,7 +26,7 @@ scrap at **$2**. Workers are paid out of the pool and score their pay minus
 **$1.50 an hour of effort**; the manager scores the firm's **profit**.
 
 The arithmetic is the game. At payroll 30 % on an equal split, one running hour
-pays a worker `0.25 × 0.30 × $20 = $1.50` — *exactly* what the hour costs it, so
+pays a worker `0.25 × 0.30 × $20 = $1.50` — _exactly_ what the hour costs it, so
 at the default pay rule a worker is precisely indifferent between working and
 shirking. The manager has to buy effort, and a worker cut to a 10 % share
 rationally goes idle: that is the mutiny, and it is mechanical, not scripted.
@@ -48,6 +48,12 @@ baselines are **role-complete**: a policy does not know which role it will draw.
 
 External players receive private manager or worker views and return complete
 shift actions. The game validates and applies each order.
+
+Connecting a socket does not authorize model calls. Startup waits for valid
+prompt, scripted, or external registration until the connection deadline;
+unregistered seats then use the steady fallback. Late registration applies to
+the next decision snapshot. A delivered strategy remains owned by the game after
+its socket disconnects; frames from a replaced socket cannot change its successor.
 
 Seats play under **anonymous cog aliases** (Sprocket, Gizmo, …): policy display
 names never reach the agents' prompts, so nobody can meta-game "that seat is the
@@ -121,6 +127,7 @@ nim r --path:src tests/test_sim.nim            # rules tests
 nim r -d:release --path:src tests/test_bot.nim # scripted-baseline tests
 nim c -d:release -o:bin/firm src/firm.nim
 nim c -d:release -o:bin/firm-player src/firm_player.nim
+python3 tools/test_policy_registration.py bin/firm /tmp/firm-registration-proof
 nim c --hints:off -d:emscripten replay-viewer/firm_replay.nim  # wasm viewer
 
 # Local scripted episodes with five WebSocket players. Seed 1 gives seat 0
@@ -147,6 +154,16 @@ uv run coworld secret put firm anthropic_api_key <keyfile>   # hosted Claude
 In this repo that whole chain is the `coworld-release.yml` workflow; `ci.yml` is
 the harness (Nim tests debug and release, a raw-Docker episode, and the static
 wasm viewer opened in headless chromium against the replay that episode wrote).
+
+The certification fixture starts with `firm-steady`: the platform selects its
+first policy for all five seats in each of five automatic self-play smoke games.
+Those smoke games therefore use scripted decisions without model calls. The
+four-shift, seed-7 certification fixture still covers all three bundled policies,
+including two prompt-controlled seats that use native LLM calls when hosted
+credentials are available. At seed 7, swapped seats 0 and 1 are both workers;
+seat 2 remains the prompt-controlled manager. Their policy assignments change,
+while the seeded roles and game rules stay fixed. These checks do not replace
+full-length episodes with genuine model decisions.
 
 ## Fielding a policy
 
