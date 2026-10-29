@@ -586,6 +586,7 @@ proc textOf(client: LlmClient, response: Response, error, url: string):
 proc cleanText*(text: string, limit: int): string =
   ## Text over the cap is cut at a RUNE boundary with the cut marked, so a
   ## multi-byte character can never be sliced in half into the replay JSON.
+  requireScalarText(text)
   result = text.strip().replace("\r", " ").replace("\n", " ")
   if result.runeLen <= limit:
     return

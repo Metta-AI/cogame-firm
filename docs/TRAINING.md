@@ -105,8 +105,11 @@ explicit nulls are excluded. Silent-floor nonempty reports are excluded even
 though native application suppresses them. Normalized native commands remain
 recorded as actually applied, without being relabeled as teacher targets.
 Invalid scalar evidence is quarantined as original serialized bytes in base64,
-with no selected attempt/action and a failed private episode. The gameplay
-parser, prompts, clocks and rules are unchanged.
+with no selected attempt/action and a failed private episode. Numeric parsing,
+prompts, clocks and physical rules are unchanged. Native text
+inputs reject non-scalar UTF-8 before clipping or state mutation; the existing
+model retry/fallback and external-frame rejection paths handle the error. Valid
+accents, surrogate pairs and empty KEEP commands retain their behavior.
 
 Native `seed_family` now hashes the actual initialized roles, machines, complete
 24-shift demand schedule and active physical rules; requested horizon and report
@@ -155,4 +158,25 @@ Plans freeze response bytes and the native request generator; actual future
 request bytes are recorded before assertions and checked against native views.
 The mixed-control private 503 sink retains an offered completed payload for
 forensics; a locally readable SDK unit is not successful publication or teacher
-admission. Actual notebook scalar poisoning remains a separate untested risk.
+admission. A retained notebook-poison fixture exposed an invalid UTF-8 spectator
+payload after the first batch; the guard stopped that partial episode before
+results, replay or private publication, so its private outcome remains unknown.
+The native text boundary now rejects unsafe notes, directives and reports before
+mutation. The repaired ordinary eight-shift fixture completes with safe public
+frames and results while preserving a failed private episode with no complete
+training units.
+
+The checker also exposes `--native-text-boundary` for sixteen native parser/apply
+vectors and `--notebook-cohort` for the same six artifact paths used by the
+failed-cohort mode. The notebook profile preserves the original response
+entities, exercises native retry/fallback, and reconstructs safe controls and
+KEEP state. An escaped invalid candidate rejected before application remains a
+normal fallback row when its stored evidence is scalar-safe; raw invalid evidence
+uses the existing forensic row. Current prospective expectations are one
+forensic fallback and one ordinary fallback, rather than two forensic rows.
+All sixteen native vectors and the complete notebook fixture pass against the
+text-boundary repair. Four preplay external frames are rejected without changing
+initial state or events; the ordinary five-prompt roster then completes with 42
+HTTP attempts, 38 accepted fixture rows and two fallbacks. The SDK reads all 41
+events and admits zero complete units because unsafe evidence fails the private
+episode. Synthetic fixture receipts authorize no model-teacher training.
