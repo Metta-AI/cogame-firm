@@ -21,9 +21,7 @@
     "runnable": {
       "type": "game",
       "image": "{{FIRM_IMAGE}}",
-      "run": [
-        "/bin/firm"
-      ],
+      "run": ["/bin/firm"],
       "env": {},
       "source_url": "https://github.com/Metta-AI/cogame-firm/tree/main"
     },
@@ -31,10 +29,7 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "tokens",
-        "players"
-      ],
+      "required": ["tokens", "players"],
       "properties": {
         "tokens": {
           "description": "One connection token per player slot, indexed by slot.",
@@ -54,9 +49,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "name"
-            ],
+            "required": ["name"],
             "properties": {
               "name": {
                 "type": "string",
@@ -280,9 +273,7 @@
       "type": "player",
       "description": "The reference Firm policy: delivers its PLAYER_PROMPT (or a default strategy covering both roles) to the game and spectates until the final frame. The seed deals the office, so a prompt must say what to do as the manager AND as a machine operator. Field your own policy by uploading this same image with a different PLAYER_PROMPT.",
       "image": "{{FIRM_IMAGE}}",
-      "run": [
-        "/bin/firm-player"
-      ],
+      "run": ["/bin/firm-player"],
       "resources": {
         "requests": {
           "cpu": "100m",
@@ -300,9 +291,7 @@
       "type": "player",
       "description": "The scripted competent baseline as a fieldable policy: as a worker it obeys its orders, runs 6 hours and maintains 3 (exactly break-even on wear), nurses a machine under condition 70 by spending the shift in the shop (run 0 / maint 8), and reports its real numbers; as a manager it splits the machines across the lines by next shift's board, pays 40% of revenue and shares the pool by last shift's units. Deterministic, no LLM involved.",
       "image": "{{FIRM_IMAGE}}",
-      "run": [
-        "/bin/firm-player"
-      ],
+      "run": ["/bin/firm-player"],
       "env": {
         "PLAYER_SCRIPTED": "steady"
       },
@@ -323,9 +312,7 @@
       "type": "player",
       "description": "The scripted drive-it-into-the-ground baseline: as a worker it obeys its orders, runs all ten hours and never maintains, killing the machine in three shifts; as a manager it puts all four machines on the bigger book, pays 20% of revenue and splits it evenly. Deterministic, no LLM involved.",
       "image": "{{FIRM_IMAGE}}",
-      "run": [
-        "/bin/firm-player"
-      ],
+      "run": ["/bin/firm-player"],
       "env": {
         "PLAYER_SCRIPTED": "taskmaster"
       },
@@ -428,10 +415,10 @@
     },
     "players": [
       {
-        "player_id": "firm-player"
+        "player_id": "firm-steady"
       },
       {
-        "player_id": "firm-steady"
+        "player_id": "firm-player"
       },
       {
         "player_id": "firm-player"
