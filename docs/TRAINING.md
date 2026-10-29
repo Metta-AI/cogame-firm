@@ -126,6 +126,39 @@ health/Pong measurements. `tools/check_native_capture.nim` reconstructs its
 private views, prompts, exact HTTP joins, commands and complete native replay.
 These checks establish execution and capture, not policy learning.
 
+Policy ownership begins only after a valid prompt, scripted, or external
+registration. Startup waits for these registrations within the existing
+connection deadline. An unregistered seat uses the shipped steady fallback
+without model attempts; late registration affects the next snapshot. A registered
+strategy survives disconnection, while replaced sockets cannot mutate the current
+registration or external actions. Role assignment, operator wording, and game
+rules are unchanged.
+
+New private observations include boolean `policy_registered`. Unregistered
+decisions also carry `fallback_reason: "unregistered_policy"`, native origin
+`fallback`, no model attempts, and no selected attempt. Registered decisions omit
+that reason. The checker validates these invariants before stripping the two
+metadata fields to compare the exact native private view. Historical captures
+retain their original format and source identities.
+
+```sh
+python3 tools/test_policy_registration.py /path/to/firm /tmp/firm-registration-proof
+nim c -d:release --path:src -o:/tmp/firm-capture-check tools/check_native_capture.nim
+/tmp/firm-capture-check --registration \
+  /tmp/firm-registration-proof/missing/config.json \
+  /tmp/firm-registration-proof/missing/trajectory.jsonl \
+  /tmp/firm-registration-proof/missing/replay.json \
+  /tmp/firm-registration-proof/missing/http.json \
+  /tmp/firm-registration-proof/operator-prompt.txt
+```
+
+The system command uses synthetic loopback replies and runs nine complete
+four-shift episodes: missing, late, native, scripted, external, registered and
+unregistered disconnects, malformed registration, and socket replacement.
+These are zero-provider correctness controls and authorize no teacher targets.
+The registration checker also reconstructs prompts, applied events, replay, and
+outcomes; run it for each retained case using the same original operator prompt.
+
 Receipt uniqueness covers every received attempt, including HTTP errors and
 parser failures. Only syntactically valid 36-character UUIDs enter the private
 registry. Reusing one marks the entire private episode failed, so earlier

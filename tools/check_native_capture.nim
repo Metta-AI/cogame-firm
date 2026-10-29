@@ -4,6 +4,116 @@ import std/[base64, json, os, strutils]
 import crunchy
 import firm/[sim, llm, prompts, native_capture]
 
+proc registrationPrivateView(observation, row: JsonNode, required = false): JsonNode =
+  ## Historical captures retain their original format; new captures validate
+  ## registration metadata before removing it from the native private view.
+  if observation.hasKey("policy_registered"):
+    doAssert observation["policy_registered"].kind == JBool
+    let ready = observation["policy_registered"].getBool()
+    let origin = observation["native_execution"]["origin"].getStr()
+    if not ready:
+      doAssert observation.hasKey("fallback_reason")
+      doAssert observation["fallback_reason"].kind == JString
+      doAssert observation["fallback_reason"].getStr() == "unregistered_policy"
+      doAssert origin == "fallback" and row["action_status"].getStr() == "fallback"
+      doAssert row["attempts"].len == 0 and row["selected_attempt_id"].kind == JNull
+    else:
+      doAssert not observation.hasKey("fallback_reason")
+    if origin == "model" or row["selected_attempt_id"].kind != JNull:
+      doAssert ready
+  else:
+    doAssert not required, "new registration proof requires policy_registered"
+    doAssert not observation.hasKey("fallback_reason")
+  result = copy(observation)
+  for key in ["policy_registered", "fallback_reason"]:
+    if result.hasKey(key): result.delete(key)
+
+proc checkRegistration(args: seq[string]) =
+  let configNode = parseFile(args[0])
+  var config = defaultGameConfig()
+  config.update($configNode)
+  config = config.sampleEpisode()
+  let selection = promptSelection(configNode)
+  let operatorPrompt = readFile(args[4])
+  let calls = parseFile(args[3])
+  doAssert calls.kind == JArray
+  var game = initSim(config)
+  let identity = identities(game)
+  let initial = initialRoot(game)
+  var rows: seq[JsonNode]
+  var episode: JsonNode
+  for line in lines(args[1]):
+    let row = parseJson(line)
+    if row["event_type"].getStr() == "decision": rows.add(row)
+    else: episode = row
+  doAssert rows.len == config.shifts * Seats and episode != nil
+  var cursor, joined: int
+  while not game.done:
+    let before = game
+    for seat in before.orderedSeats():
+      let row = rows[cursor]
+      let observation = row["observation"]
+      doAssert row["seat"].getStr() == $seat
+      doAssert observation["pre_native_sha256"].getStr() == before.nativeStateHash()
+      doAssert observation["native_initial_root"] == initial
+      doAssert observation["scenario_family"].getStr() == identity.family
+      doAssert observation["prompt_selection"] == selection.selectionMetadata()
+      var privateView = registrationPrivateView(observation, row, true)
+      for key in ["native_initial_root", "scenario_family", "task_identity",
+          "prompt_selection", "pre_native_sha256", "native_parsed_proposals",
+          "native_requests", "native_execution"]:
+        privateView.delete(key)
+      doAssert privateView == before.playerStateJson(seat)
+      let execution = observation["native_execution"]
+      let origin = execution["origin"].getStr()
+      doAssert origin in ["model", "scripted", "external", "fallback"]
+      for attempt in row["attempts"]:
+        doAssert origin == "model" and attempt["accepted"].getBool()
+        doAssert attempt["request"]["system"].getStr() == before.systemPrompt(seat, selection)
+        doAssert attempt["request"]["messages"][0]["content"].getStr() == before.userPrompt(seat, operatorPrompt)
+        var found = false
+        for wire in calls:
+          if wire["fixture_call_id"] == attempt["platform_call_id"]:
+            doAssert not found and wire["slot"].getInt() == seat
+            doAssert wire["request_b64"].getStr() == observation["native_requests"][0]["body_b64"].getStr()
+            doAssert parseJson(decode(wire["request_b64"].getStr())) == attempt["request"]
+            doAssert wire["response_b64"] == attempt["response_body_b64"]
+            found = true
+        doAssert found
+        inc joined
+      let command = row["executed_action"]
+      let decision = before.parseReply(seat, command)
+      if not observation["policy_registered"].getBool():
+        doAssert command == before.decisionJson(seat, before.scriptedAction(seat, skSteady))
+      let startEvent = game.events.len
+      let scripted = origin in ["scripted", "fallback"]
+      if game.isManager(seat):
+        game.applyMemo(seat, decision.orders, decision.payroll, decision.split,
+          decision.say, decision.notes, scripted)
+      else:
+        game.applyWork(seat, decision.line, decision.run, decision.maint,
+          decision.say, decision.notes, scripted)
+      var events: seq[GameEvent]
+      for index in startEvent ..< game.events.len: events.add(game.events[index])
+      let expectedEvents = seatEvents(events, seat)
+      doAssert execution["events"] == expectedEvents
+      doAssert execution["events_sha256"].getStr() == sha256($expectedEvents).toHex.toLowerAscii()
+      doAssert execution["post_native_sha256"].getStr() == game.nativeStateHash()
+      inc cursor
+  doAssert joined == calls.len
+  let replay = parseFile(args[2])
+  var expected = newJArray()
+  var recorded: seq[GameEvent]
+  for event in game.events: expected.add(event.eventToJson())
+  doAssert replay["events"] == expected
+  for event in replay["events"]: recorded.add(eventFromJson(event))
+  let rebuilt = replayMatch(config, recorded)
+  doAssert rebuilt.len > 0 and rebuilt[^1].resultsJson() == game.resultsJson()
+  doAssert replay["results"] == game.resultsJson() and episode["outcome"] == game.resultsJson()
+  doAssert episode["status"].getStr() == "completed"
+  echo $(%*{"status":"PASS", "mode":"policy-registration", "shifts":game.shiftsPlayed,
+    "decisions":cursor,"HTTP":joined,"provider_calls":0,"teacher_authorized":false})
+
 proc checkFailedCohort(args: seq[string]) =
   ## Separate strict mode for the frozen receipt/scalar negative; positive mode is unchanged.
   let configNode = parseFile(args[0])
@@ -88,7 +198,7 @@ proc checkFailedCohort(args: seq[string]) =
       doAssert observation["task_identity"].getStr() == identities.task
       doAssert observation["prompt_selection"] == selection.selectionMetadata()
       doAssert observation["pre_native_sha256"].getStr() == preHash
-      var privateView = copy(observation)
+      var privateView = registrationPrivateView(observation, row)
       for key in ["native_initial_root", "scenario_family", "task_identity",
           "prompt_selection", "pre_native_sha256", "native_parsed_proposals",
           "native_requests", "native_execution", "capture_errors"]:
@@ -252,7 +362,7 @@ proc checkProfile(args: seq[string]) =
       doAssert observation["task_identity"].getStr() == identities.task
       doAssert observation["prompt_selection"] == selection.selectionMetadata()
       doAssert observation["pre_native_sha256"].getStr() == preHash
-      var privateView = copy(observation)
+      var privateView = registrationPrivateView(observation, row)
       for key in ["native_initial_root", "scenario_family", "task_identity",
           "prompt_selection", "pre_native_sha256", "native_parsed_proposals",
           "native_requests", "native_execution"]:
@@ -709,6 +819,9 @@ proc checkNotebookCohort(args: seq[string]) =
 
 when isMainModule:
   let args = commandLineParams()
+  if args.len == 6 and args[0] == "--registration":
+    checkRegistration(args[1 .. ^1])
+    quit(0)
   if args == @["--native-text-boundary"]:
     checkNativeTextBoundary()
     quit(0)
@@ -758,7 +871,7 @@ when isMainModule:
       doAssert observation["task_identity"].getStr() == identities.task
       doAssert observation["prompt_selection"] == selection.selectionMetadata()
       doAssert observation["pre_native_sha256"].getStr() == preHash
-      var privateView = copy(observation)
+      var privateView = registrationPrivateView(observation, row)
       for key in ["native_initial_root", "scenario_family", "task_identity",
           "prompt_selection", "pre_native_sha256", "native_parsed_proposals",
           "native_requests", "native_execution"]:

@@ -49,6 +49,12 @@ baselines are **role-complete**: a policy does not know which role it will draw.
 External players receive private manager or worker views and return complete
 shift actions. The game validates and applies each order.
 
+Connecting a socket does not authorize model calls. Startup waits for valid
+prompt, scripted, or external registration until the connection deadline;
+unregistered seats then use the steady fallback. Late registration applies to
+the next decision snapshot. A delivered strategy remains owned by the game after
+its socket disconnects; frames from a replaced socket cannot change its successor.
+
 Seats play under **anonymous cog aliases** (Sprocket, Gizmo, …): policy display
 names never reach the agents' prompts, so nobody can meta-game "that seat is the
 champion". The spectator and replay viewers map the aliases back to policy names;
@@ -121,6 +127,7 @@ nim r --path:src tests/test_sim.nim            # rules tests
 nim r -d:release --path:src tests/test_bot.nim # scripted-baseline tests
 nim c -d:release -o:bin/firm src/firm.nim
 nim c -d:release -o:bin/firm-player src/firm_player.nim
+python3 tools/test_policy_registration.py bin/firm /tmp/firm-registration-proof
 nim c --hints:off -d:emscripten replay-viewer/firm_replay.nim  # wasm viewer
 
 # Local scripted episodes with five WebSocket players. Seed 1 gives seat 0
